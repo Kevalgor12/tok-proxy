@@ -1,0 +1,45 @@
+{
+  "name": "tok-proxy",
+  "version": "0.3.0",
+  "description": "Local CLI proxy that cuts AI coding-tool token usage 60-99% by compressing command output before it reaches the model.",
+  "bin": {
+    "tok": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "scripts",
+    "tsconfig.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "tokens",
+    "claude-code",
+    "cursor",
+    "cli",
+    "proxy",
+    "hooks"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "build:binaries": "npm run build && node scripts/build-binaries.js",
+    "setup": "node scripts/postinstall.js --force",
+    "postinstall": "node scripts/postinstall.js",
+    "dev": "ts-node src/main.ts",
+    "start": "node dist/main.js",
+    "prepublishOnly": "npm run build",
+    "test:hook": "bash scripts/test-tok-rewrite.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@yao-pkg/pkg": "^6.21.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

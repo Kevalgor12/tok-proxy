@@ -1,0 +1,18 @@
+# Build output — regenerated on install by scripts/postinstall.js
+dist/
+
+# Standalone binaries — release artifacts, attach to GitHub Releases (not committed)
+build/
+
+# Dependencies
+node_modules/
+
+# Local scratch / logs
+.tmp/
+*.log
+
+# Editor / OS junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
