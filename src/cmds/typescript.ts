@@ -22,7 +22,7 @@ export function handleTsc(args: string[], ultra: boolean): HandlerResult {
   };
 }
 
-export function groupErrors(raw: string, ultra = false): string {
+function groupErrors(raw: string, ultra = false): string {
   const clean = stripAnsi(raw);
   const lines = clean.split('\n');
 

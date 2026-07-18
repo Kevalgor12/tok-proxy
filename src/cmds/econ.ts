@@ -1,6 +1,6 @@
-import { DB, readAIUsage, readCommands } from '../core/local-db';
 import { TokConfig, ModelPricing } from '../core/config';
-import { dollar, estimateTokens, formatNumber, isoDay, isoMonth, isoWeek, percent, withinDays } from '../core/utils';
+import { DB, readAIUsage, readCommands } from '../core/local-db';
+import { dollar, escapeCsv, estimateTokens, formatNumber, isoDay, isoMonth, isoWeek, percent, withinDays } from '../core/utils';
 
 interface EconArgs {
   daily?: boolean;
@@ -70,7 +70,7 @@ function summaryView(db: DB, config: TokConfig): string {
   lines.push('─'.repeat(63));
   lines.push(`AI tokens consumed    ${formatNumber(month.in).padStart(11)} input  +  ${formatNumber(month.out)} output`);
   lines.push(`Cache tokens          ${formatNumber(month.cr).padStart(11)} reads  +  ${formatNumber(month.cw)} writes`);
-  const costNote = estimated ? '(estimated — run tok usage ingest --ccusage for actuals)' : '(verified)';
+  const costNote = estimated ? '(estimated - run tok usage ingest --ccusage for actuals)' : '(verified)';
   lines.push(`Actual cost ${costNote.padStart(36)}  ${dollar(month.cost)}`);
   lines.push(`Effective input CPT                 ${dollar(inputCpt).padStart(7)} / token`);
   lines.push('');
@@ -249,8 +249,8 @@ function exportCsv(db: DB, config: TokConfig, args: EconArgs): string {
       day,
       isoWeek(r.timestamp),
       isoMonth(r.timestamp),
-      esc(r.model),
-      esc(r.source),
+      escapeCsv(r.model),
+      escapeCsv(r.source),
       r.input_tokens,
       r.output_tokens,
       r.cache_write_tokens,
@@ -261,9 +261,4 @@ function exportCsv(db: DB, config: TokConfig, args: EconArgs): string {
     ].join(','));
   }
   return lines.join('\n');
-}
-
-function esc(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }

@@ -24,7 +24,7 @@ interface Rule {
 
 // Order matters: more specific rules (npx tsc, npx jest) must come before generic ones.
 export const RULES: Rule[] = [
-  // Bypass — already a tok command
+  // Bypass - already a tok command
   { match: /^tok(\s|$)/, replace: '__noop__' },
 
   // Rewrite npx invocations of supported tools
@@ -40,7 +40,7 @@ export const RULES: Rule[] = [
   { match: /^(?:npx\s+)?next\s+build(\s|$)/, replace: 'tok next build$1' },
   { match: /^(?:npx\s+)?next\s+lint(\s|$)/, replace: 'tok next lint$1' },
 
-  // Targeted subcommands — only rewrite the sub we know how to compress, so we
+  // Targeted subcommands - only rewrite the sub we know how to compress, so we
   // never mis-summarize unrelated tasks (e.g. `rake db:migrate`, `pulumi stack`).
   { match: /^rake\s+test(\s|$)/, replace: 'tok rake test$1' },
   { match: /^pulumi\s+(preview|up|destroy)(\s|$)/, replace: 'tok pulumi $1$2' },
@@ -72,7 +72,7 @@ export const RULES: Rule[] = [
   { match: /^pytest(\s|$)/, replace: 'tok pytest$1' },
   { match: /^rspec(\s|$)/, replace: 'tok rspec$1' },
 
-  // Go / Rust toolchains — handler dispatches per sub-command; non-test/build
+  // Go / Rust toolchains - handler dispatches per sub-command; non-test/build
   // subs (go run, cargo fmt, …) pass through in full.
   { match: /^go(\s|$)/, replace: 'tok go$1' },
   { match: /^cargo(\s|$)/, replace: 'tok cargo$1' },

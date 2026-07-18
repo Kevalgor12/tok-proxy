@@ -1,5 +1,5 @@
-import { DB, cacheStats, topCacheEntries, clearCache } from '../core/local-db';
 import { TokConfig } from '../core/config';
+import { DB, cacheStats, topCacheEntries, clearCache } from '../core/local-db';
 import { formatBytes, formatNumber, estimateTokens, relativeTime, pad } from '../core/utils';
 
 interface CacheOpts {
@@ -7,7 +7,7 @@ interface CacheOpts {
   list?: boolean;
 }
 
-// `tok cache` — inspect or clear the output cache. The cache is what powers
+// `tok cache` - inspect or clear the output cache. The cache is what powers
 // unchanged-detection: repeated idempotent reads return a marker instead of the
 // full payload.
 export function runCache(db: DB, config: TokConfig, opts: CacheOpts): string {
@@ -19,7 +19,7 @@ export function runCache(db: DB, config: TokConfig, opts: CacheOpts): string {
   const stats = cacheStats(db);
   const savedTokens = estimateTokens(' '.repeat(stats.savedBytes));
   const lines: string[] = [];
-  lines.push('tok cache — unchanged-output detection');
+  lines.push('tok cache - unchanged-output detection');
   lines.push('══════════════════════════════════════════════════════════');
   lines.push(`Status:        ${config.cache.enabled ? 'enabled' : 'disabled'}`);
   lines.push(`Entries:       ${formatNumber(stats.entries)} / ${formatNumber(config.cache.maxEntries)} max`);

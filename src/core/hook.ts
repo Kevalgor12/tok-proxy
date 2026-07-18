@@ -1,6 +1,7 @@
+import { spawnSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
+
 import { rewriteCommand } from './registry';
 import { readFileIfExists, safeJsonParse } from './utils';
 
@@ -40,7 +41,7 @@ export function buildClaudeHookOutput(payload: string): string | null {
 }
 
 // How the hook should invoke tok. Preference:
-//   1. `tok` on PATH (a global npm link or a binary already on PATH) — clean + portable.
+//   1. `tok` on PATH (a global npm link or a binary already on PATH) - clean + portable.
 //   2. A packaged single-file binary that isn't on PATH yet (e.g. mid-install): invoke
 //      ourselves by absolute path so the hook works before PATH changes take effect.
 //   3. A source checkout: `node <abs main.js>`.
@@ -85,9 +86,9 @@ export function readRegisteredClaudeCommand(): string | null {
 
 // Confirm the hook rewrites a fake Bash tool-call to a `tok` command. This runs the
 // exact function the registered `tok hook claude` command executes when Claude Code
-// fires it — in-process, so the self-check is reliable. (We deliberately do NOT
+// fires it - in-process, so the self-check is reliable. (We deliberately do NOT
 // re-spawn tok here: a packaged binary spawning itself with piped stdin is unreliable
-// under pkg, and Claude Code — regular Node — invokes the hook fine regardless.) The
+// under pkg, and Claude Code - regular Node - invokes the hook fine regardless.) The
 // wiring around it (command registered, `tok` on PATH) is checked separately.
 export function probeClaudeHook(_command?: string): { pass: boolean; rewrite?: string; reason?: string } {
   const payload = JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'git status' } });

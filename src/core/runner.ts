@@ -1,8 +1,9 @@
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { dataDir, ensureDir, nowIso, TOK_VERSION, appendErrorLog } from './utils';
+
 import { DB, getMeta, setMeta } from './local-db';
+import { dataDir, ensureDir, nowIso, TOK_VERSION, appendErrorLog } from './utils';
 
 export interface RunResult {
   stdout: string;
@@ -51,7 +52,7 @@ function quoteWinArg(arg: string): string {
   return `"${arg.replace(/"/g, '""')}"`;
 }
 
-export function teeDir(): string {
+function teeDir(): string {
   return path.join(dataDir(), 'tee');
 }
 

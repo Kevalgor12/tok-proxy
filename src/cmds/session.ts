@@ -80,5 +80,5 @@ function formatRange(start: string, end: string): string {
   const month = s.toLocaleString('en-US', { month: 'short', day: 'numeric' });
   const sH = String(s.getHours()).padStart(2, '0') + ':' + String(s.getMinutes()).padStart(2, '0');
   const eH = String(e.getHours()).padStart(2, '0') + ':' + String(e.getMinutes()).padStart(2, '0');
-  return `${month} ${sH}–${eH}`;
+  return `${month} ${sH}-${eH}`;
 }

@@ -1,7 +1,7 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as crypto from 'crypto';
 
 export const TOK_VERSION = '0.3.0';
 
@@ -39,21 +39,19 @@ export function formatNumber(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-export function detectOS(): string {
-  return process.platform;
-}
-
-export function detectArch(): string {
-  return process.arch;
+// Quote a CSV field only when it holds a comma, quote, or newline.
+export function escapeCsv(s: string): string {
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
 }
 
 // Single tok home directory under the user profile (~/.tok), shared by data + config.
 //
 // On Windows this deliberately avoids %LOCALAPPDATA% / %APPDATA%. MSIX/Store-packaged
-// apps — Claude Desktop is one — run sandboxed, and Windows transparently redirects
+// apps - Claude Desktop is one - run sandboxed, and Windows transparently redirects
 // those two folders into the package's private ...\Packages\<app>\LocalCache\. The hook
 // (spawned by Claude, sandboxed) would then write savings to that private folder while
-// `tok gain` in your normal terminal reads the real one — so your terminal shows 0 even
+// `tok gain` in your normal terminal reads the real one - so your terminal shows 0 even
 // though tok is saving. os.homedir() (USERPROFILE) is NOT redirected, so ~/.tok is the
 // same directory in both contexts. Override with TOK_HOME if you need a custom location.
 export function tokHome(): string {
@@ -115,10 +113,6 @@ export function pad(s: string, width: number, alignRight = false): string {
   return alignRight ? spaces + s : s + spaces;
 }
 
-export function homeJoin(...segments: string[]): string {
-  return path.join(os.homedir(), ...segments);
-}
-
 export function fileExistsSync(p: string): boolean {
   try {
     fs.accessSync(p);
@@ -168,7 +162,7 @@ export function unique<T>(arr: T[]): T[] {
   return Array.from(new Set(arr));
 }
 
-// True when the ISO timestamp falls within the last `days` — a rolling 24h×days
+// True when the ISO timestamp falls within the last `days` - a rolling 24h×days
 // window (not calendar days), used by the analytics for "today / 7d / 30d".
 export function withinDays(ts: string, days: number): boolean {
   const t = new Date(ts).getTime();

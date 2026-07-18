@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
+
 import { dataDir, ensureDir, nowIso, TOK_VERSION, appendErrorLog } from './utils';
 
-// Zero-dependency local store. No native modules, no build step — just files under
+// Zero-dependency local store. No native modules, no build step - just files under
 // the OS data dir, so `npm install` can never fail on a missing compiler:
 //   commands.ndjson   append-only log of filtered-command savings (one JSON per line)
 //   ai_usage.ndjson   append-only log of ingested AI token usage
@@ -263,7 +264,7 @@ export function openDb(): DB {
   return store;
 }
 
-// Path to the data directory — reported by `tok doctor`.
+// Path to the data directory - reported by `tok doctor`.
 export function dbPath(): string {
   return dataDir();
 }

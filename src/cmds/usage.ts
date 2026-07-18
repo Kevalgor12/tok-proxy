@@ -1,9 +1,10 @@
+import { spawnSync } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
-import { spawnSync } from 'child_process';
-import { DB, recordAIUsage, readAIUsage, AIUsageRecord } from '../core/local-db';
+
 import { TokConfig } from '../core/config';
+import { DB, recordAIUsage, readAIUsage, AIUsageRecord } from '../core/local-db';
 import { formatNumber, dollar, appendErrorLog, safeJsonParse } from '../core/utils';
 
 interface IngestArgs {

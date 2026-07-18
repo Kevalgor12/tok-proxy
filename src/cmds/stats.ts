@@ -1,6 +1,6 @@
-import { DB, readAIUsage } from '../core/local-db';
 import { TokConfig } from '../core/config';
-import { dollar, formatNumber, isoDay, isoMonth, isoWeek, percent, relativeTime, withinDays } from '../core/utils';
+import { DB, readAIUsage } from '../core/local-db';
+import { dollar, escapeCsv, formatNumber, isoDay, isoMonth, isoWeek, percent, relativeTime, withinDays } from '../core/utils';
 
 interface StatsArgs {
   model?: string;
@@ -116,7 +116,7 @@ function summaryView(db: DB, config: TokConfig, args: StatsArgs): string {
   lines.push(`  Cache hit rate: ${hitRate.toFixed(1)}%`);
   lines.push(`  Est. cache savings: ${dollar(cacheSavingsUsd)}`);
 
-  // Source attribution — most recently ingested source
+  // Source attribution - most recently ingested source
   const lastBySource = new Map<string, string>();
   for (const r of readAIUsage(db)) {
     const cur = lastBySource.get(r.source);
@@ -205,9 +205,9 @@ function exportCsv(db: DB, args: StatsArgs): string {
       r.input_tokens + r.output_tokens + r.cache_write_tokens + r.cache_read_tokens;
     lines.push([
       r.timestamp,
-      esc(r.session_id),
-      esc(r.model),
-      esc(r.source),
+      escapeCsv(r.session_id),
+      escapeCsv(r.model),
+      escapeCsv(r.source),
       r.input_tokens,
       r.output_tokens,
       r.cache_write_tokens,
@@ -220,9 +220,4 @@ function exportCsv(db: DB, args: StatsArgs): string {
     ].join(','));
   }
   return lines.join('\n');
-}
-
-function esc(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
 }

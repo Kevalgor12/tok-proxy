@@ -36,7 +36,7 @@ export function handleNode(pm: PM, args: string[], ultra: boolean): HandlerResul
   };
 }
 
-export function filterInstallOutput(raw: string, pm: PM, ultra = false): string {
+function filterInstallOutput(raw: string, pm: PM, ultra = false): string {
   const clean = stripAnsi(raw);
   const lines = clean.split('\n');
 

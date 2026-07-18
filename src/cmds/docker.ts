@@ -1,6 +1,6 @@
+import { deduplicateLines } from '../core/filter';
 import { run } from '../core/runner';
 import { stripAnsi } from '../core/utils';
-import { deduplicateLines } from '../core/filter';
 import { HandlerResult } from './git';
 
 export function handleDocker(args: string[], ultra: boolean): HandlerResult {

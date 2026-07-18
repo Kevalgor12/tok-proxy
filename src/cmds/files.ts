@@ -1,9 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { run } from '../core/runner';
-import { stripAnsi, truncate, readFileIfExists, safeJsonParse } from '../core/utils';
+
 import { TokConfig } from '../core/config';
 import { FilterLevel, filterCode, langFromPath, smartSummary, extractStructure } from '../core/filter';
+import { run } from '../core/runner';
+import { stripAnsi, truncate, readFileIfExists, safeJsonParse } from '../core/utils';
 import { HandlerResult } from './git';
 
 export function handleLs(args: string[], ultra: boolean, config: TokConfig): HandlerResult {
@@ -38,7 +39,7 @@ function readDirRaw(target: string): string {
   }
 }
 
-export function formatTree(dirPath: string, ultra: boolean, config: TokConfig): string {
+function formatTree(dirPath: string, ultra: boolean, config: TokConfig): string {
   const noise = new Set(config.noiseDirectories);
   const maxDepth = config.filters.ls.maxDepth;
 
@@ -210,7 +211,7 @@ export function handleGrep(args: string[], ultra: boolean, config: TokConfig): H
     if (!useArgs.includes('-rn') && !useArgs.includes('-n')) useArgs = ['-rn', ...useArgs];
     if (looksLikeSingleFile && !useArgs.includes('-H')) useArgs = ['-H', ...useArgs];
   } else if (cmd === 'rg') {
-    // ripgrep already prefixes filenames per match by default — no change needed.
+    // ripgrep already prefixes filenames per match by default - no change needed.
   }
 
   const result = run(cmd, useArgs);
@@ -234,7 +235,7 @@ function existsSyncSafe(p: string): boolean {
   try { return fs.existsSync(p); } catch { return false; }
 }
 
-export function groupByFile(raw: string, ultra: boolean, maxMatches: number): string {
+function groupByFile(raw: string, ultra: boolean, maxMatches: number): string {
   const clean = stripAnsi(raw);
   const lines = clean.split('\n').filter((l) => l.trim());
   const byFile = new Map<string, number[]>();
@@ -344,7 +345,7 @@ function parseFindArgs(args: string[]): { dir: string; pattern: RegExp | null } 
     } else if (!a.startsWith('-') && i === 0) {
       dir = a;
     } else if (!a.startsWith('-')) {
-      // Additional positional — usually a path filter; ignore for portability.
+      // Additional positional - usually a path filter; ignore for portability.
     }
   }
   return { dir, pattern };

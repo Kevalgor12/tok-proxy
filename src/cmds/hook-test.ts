@@ -92,7 +92,7 @@ export function runHookTest(opts: HookTestOptions = {}): { output: string; exitC
 }
 
 // Exercise the hook's decision logic (the exact code `tok hook claude` runs on the
-// payload) in-process — reliable and identical to what Claude Code triggers.
+// payload) in-process - reliable and identical to what Claude Code triggers.
 function invokeHook(_command: string, payload: string): { stdout: string; stderr: string; code: number } {
   return { stdout: buildClaudeHookOutput(payload) || '', stderr: '', code: 0 };
 }
@@ -125,7 +125,7 @@ function checkOutcome(c: TestCase, r: { stdout: string; stderr: string; code: nu
 function checkRegistration(): string | null {
   const cmd = readRegisteredClaudeCommand();
   if (cmd) return `Registered: ~/.claude/settings.json PreToolUse runs \`${cmd}\``;
-  return 'Note: no tok hook registered in ~/.claude/settings.json — run: tok init --claude';
+  return 'Note: no tok hook registered in ~/.claude/settings.json - run: tok init --claude';
 }
 
 function truncate(s: string, n: number): string {

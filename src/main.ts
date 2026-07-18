@@ -1,38 +1,37 @@
 #!/usr/bin/env node
-import { TOK_VERSION, nowIso, appendErrorLog, estimateTokens } from './core/utils';
-import { loadConfig, shouldSkipTracking, shouldSkipCache } from './core/config';
-import { openDb, recordCommand, rowCounts } from './core/local-db';
-import { run, cleanOldTeeFiles, maybeTee, checkHookVersion } from './core/runner';
-import { consultCache } from './core/cache';
+import { handleRuff, handleGolangciLint, handleRubocop, handleNext } from './cmds/build';
+import { runCache } from './cmds/cache';
+import { runDiscover } from './cmds/discover';
+import { handleDocker, handleKubectl } from './cmds/docker';
+import { runDoctor } from './cmds/doctor';
+import { runEcon } from './cmds/econ';
+import { handleLs, handleCat, handleSmart, handleGrep, handleFind, handleDiff, handleJson } from './cmds/files';
+import { runGain } from './cmds/gain';
+import { handleGh } from './cmds/gh';
 import { handleGit, HandlerResult } from './cmds/git';
+import { runHookTest } from './cmds/hook-test';
+import { handleCurl, handleWget, handleEnv } from './cmds/http';
+import { handlePulumi, handleTerraform } from './cmds/infra';
+import { runInit } from './cmds/init';
+import { handleGo, handleCargo } from './cmds/lang';
+import { handleLint } from './cmds/lint';
 import { handleNode } from './cmds/node';
-import { handleTsc } from './cmds/typescript';
+import { handlePip, handleUv, handleBundle, handlePrisma, handleGem } from './cmds/pkg';
+import { runSession } from './cmds/session';
+import { runStats } from './cmds/stats';
 import { handleTestRunner } from './cmds/test-runners';
 import { handleMoreTests } from './cmds/tests-more';
-import { handleLint } from './cmds/lint';
-import { handleRuff, handleGolangciLint, handleRubocop, handleNext } from './cmds/build';
-import { handleGo, handleCargo } from './cmds/lang';
-import { handleGh } from './cmds/gh';
-import { handlePip, handleUv, handleBundle, handlePrisma, handleGem } from './cmds/pkg';
-import { handlePulumi, handleTerraform } from './cmds/infra';
-import { handleCurl, handleWget, handleEnv } from './cmds/http';
-import { handleLs, handleCat, handleSmart, handleGrep, handleFind, handleDiff, handleJson } from './cmds/files';
-import { handleDocker, handleKubectl } from './cmds/docker';
-import { runGain } from './cmds/gain';
-import { runStats } from './cmds/stats';
-import { runEcon } from './cmds/econ';
+import { handleTsc } from './cmds/typescript';
 import { runUsageIngest, runUsageLog, runUsageModels } from './cmds/usage';
-import { runSession } from './cmds/session';
-import { runDiscover } from './cmds/discover';
 import { runVerify } from './cmds/verify';
-import { runDoctor } from './cmds/doctor';
-import { runCache } from './cmds/cache';
-import { runInit } from './cmds/init';
-import { runHookTest } from './cmds/hook-test';
-import { rewriteCommand } from './core/registry';
-import { buildClaudeHookOutput } from './core/hook';
+import { consultCache } from './core/cache';
+import { loadConfig, shouldSkipTracking, shouldSkipCache } from './core/config';
 import { deduplicateLines } from './core/filter';
-import { stripAnsi, truncate } from './core/utils';
+import { buildClaudeHookOutput } from './core/hook';
+import { openDb, recordCommand, rowCounts } from './core/local-db';
+import { rewriteCommand } from './core/registry';
+import { run, cleanOldTeeFiles, maybeTee, checkHookVersion } from './core/runner';
+import { TOK_VERSION, nowIso, appendErrorLog, estimateTokens, stripAnsi, truncate } from './core/utils';
 
 interface GlobalFlags {
   ultra: boolean;
@@ -100,7 +99,7 @@ function hasFlag(args: string[], name: string): boolean {
 }
 
 function helpText(): string {
-  return `tok ${TOK_VERSION} — CLI proxy that reduces LLM token consumption
+  return `tok ${TOK_VERSION} - CLI proxy that reduces LLM token consumption
 
 USAGE
   tok <command> [args...]
@@ -180,7 +179,7 @@ async function main(): Promise<void> {
 
   // Hot path: `tok hook <agent>` is the Node-free PreToolUse hook Claude Code fires
   // on every Bash tool call. It reads the tool-call JSON on stdin and prints the
-  // rewrite decision on stdout — no shell, no node, no jq — so a standalone binary
+  // rewrite decision on stdout - no shell, no node, no jq - so a standalone binary
   // works with zero runtime prerequisites. Skip config + DB to keep latency minimal.
   if (rest[0] === 'hook') {
     const payload = await readStdin();
@@ -191,8 +190,8 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Hot path: `tok rewrite "<cmd>"` — the rewrite decision by itself (used by the
-  // legacy shell-script hook and by tests). Exit codes are the protocol — see core/registry.ts.
+  // Hot path: `tok rewrite "<cmd>"` - the rewrite decision by itself (used by the
+  // legacy shell-script hook and by tests). Exit codes are the protocol - see core/registry.ts.
   if (rest[0] === 'rewrite') {
     const inputCmd = rest.slice(1).join(' ');
     const outcome = rewriteCommand(inputCmd);
@@ -447,7 +446,7 @@ async function main(): Promise<void> {
       ];
       result = { plain: lines.join('\n'), exitCode: 0 };
     } else {
-      // Unknown command — generic filter passthrough
+      // Unknown command - generic filter passthrough
       const r = run(command, cmdArgs);
       const raw = r.stdout + (r.stderr ? `\n${r.stderr}` : '');
       let filtered = '';
@@ -487,7 +486,7 @@ async function main(): Promise<void> {
 
   // Output cache: if this idempotent read produced byte-identical output to a prior
   // run, swap the full payload for a tiny "unchanged" marker. The real command has
-  // already executed — we only shrink what the model sees.
+  // already executed - we only shrink what the model sees.
   let effectiveFiltered = handler.filteredOutput;
   if (!flags.noCache && !shouldSkipCache()) {
     try {
@@ -521,7 +520,7 @@ async function main(): Promise<void> {
     process.stderr.write(`\n[tok debug] tokens saved (est): ${estimateTokens(' '.repeat(saved))}\n`);
   }
 
-  // Record savings locally (everything tok does is local-only — no network).
+  // Record savings locally (everything tok does is local-only - no network).
   if (!flags.noTrack && !shouldSkipTracking()) {
     recordCommand(db, {
       timestamp: nowIso(),

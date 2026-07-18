@@ -1,10 +1,11 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+import { readRegisteredClaudeCommand, probeClaudeHook } from '../core/hook';
 import { DB, getMeta } from '../core/local-db';
 import { TOK_VERSION, fileExistsSync, readFileIfExists } from '../core/utils';
-import { readRegisteredClaudeCommand, probeClaudeHook } from '../core/hook';
 
 interface ToolStatus {
   name: string;
@@ -22,7 +23,7 @@ const TOK_AWARENESS_FILENAME = 'tok-awareness.md';
 export function runVerify(db: DB): string {
   const tools: ToolStatus[] = [];
 
-  // Claude Code — transparent (settings.json command hook)
+  // Claude Code - transparent (settings.json command hook)
   const claudeHome = path.join(os.homedir(), '.claude');
   const claudeCmd = readRegisteredClaudeCommand();
   if (claudeCmd) {
@@ -36,12 +37,12 @@ export function runVerify(db: DB): string {
       mode: 'transparent',
     });
   } else if (fileExistsSync(claudeHome)) {
-    tools.push({ name: 'Claude Code', installed: false, mode: 'transparent', note: 'detected but hook not registered — run: tok init --claude' });
+    tools.push({ name: 'Claude Code', installed: false, mode: 'transparent', note: 'detected but hook not registered - run: tok init --claude' });
   } else {
     tools.push({ name: 'Claude Code', installed: 'not-detected', mode: 'unknown' });
   }
 
-  // Cursor — transparent (script in ~/.cursor/hooks/)
+  // Cursor - transparent (script in ~/.cursor/hooks/)
   const cursorHome = path.join(os.homedir(), '.cursor');
   const cursorHook = path.join(cursorHome, 'hooks', 'tok-rewrite.sh');
   const cursorCfg = path.join(cursorHome, 'hooks.json');
@@ -56,12 +57,12 @@ export function runVerify(db: DB): string {
       mode: 'transparent',
     });
   } else if (fileExistsSync(cursorHome)) {
-    tools.push({ name: 'Cursor', installed: false, mode: 'transparent', note: 'detected but hook missing — run: tok init --cursor' });
+    tools.push({ name: 'Cursor', installed: false, mode: 'transparent', note: 'detected but hook missing - run: tok init --cursor' });
   } else {
     tools.push({ name: 'Cursor', installed: 'not-detected', mode: 'unknown' });
   }
 
-  // Awareness-based (instruction mode) — VS Code Copilot, Gemini, Windsurf, Cline
+  // Awareness-based (instruction mode) - VS Code Copilot, Gemini, Windsurf, Cline
   pushInstructionStatus(tools, 'Copilot (VS Code)', vscodeAwarenessPath());
   pushInstructionStatus(tools, 'Gemini CLI', path.join(os.homedir(), '.gemini', TOK_AWARENESS_FILENAME));
   pushInstructionStatus(tools, 'Windsurf', path.join(os.homedir(), '.codeium', 'windsurf', TOK_AWARENESS_FILENAME));
@@ -81,12 +82,12 @@ export function runVerify(db: DB): string {
     const modeTag = t.mode === 'transparent' ? '[transparent]' : t.mode === 'instruction' ? '[instruction]' : '';
     lines.push(`  OK   ${t.name.padEnd(20)} ${modeTag}${v}   ${t.hookPath || ''}`);
     if (t.registered === false) {
-      lines.push(`         WARN: hook script exists but not registered with the AI tool — re-run tok init`);
+      lines.push(`         WARN: hook script exists but not registered with the AI tool - re-run tok init`);
     }
     if (t.hookProbe === 'pass') {
       lines.push(`         Probe:   PASS (hook produced expected rewrite)`);
     } else if (t.hookProbe === 'fail') {
-      lines.push(`         Probe:   FAIL (hook output does not match expected protocol — run: tok hook-test)`);
+      lines.push(`         Probe:   FAIL (hook output does not match expected protocol - run: tok hook-test)`);
     }
   }
 
@@ -97,7 +98,7 @@ export function runVerify(db: DB): string {
   } else if (hookV) {
     lines.push(`Hooks are current (v${hookV}).`);
   } else {
-    lines.push('No hook version recorded yet — run: tok init');
+    lines.push('No hook version recorded yet - run: tok init');
   }
   return lines.join('\n');
 }

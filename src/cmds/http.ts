@@ -1,7 +1,6 @@
-import { run } from '../core/runner';
-import { stripAnsi, truncate, formatBytes } from '../core/utils';
 import { deduplicateLines, extractStructure } from '../core/filter';
-import { safeJsonParse } from '../core/utils';
+import { run } from '../core/runner';
+import { stripAnsi, truncate, formatBytes, safeJsonParse } from '../core/utils';
 import { HandlerResult } from './git';
 
 // HTTP fetchers (curl/wget) and `env`. curl/wget bodies are only compressed when
@@ -50,7 +49,7 @@ export function handleWget(args: string[], ultra: boolean): HandlerResult {
   };
 }
 
-// `env` / `printenv` — show variable NAMES only. Values commonly hold tokens and
+// `env` / `printenv` - show variable NAMES only. Values commonly hold tokens and
 // secrets, so we never echo them to the model.
 export function handleEnv(args: string[], ultra: boolean): HandlerResult {
   const bin = args[0] === '__printenv__' ? 'printenv' : 'env';
@@ -96,7 +95,7 @@ function summarizeBody(body: string, ultra: boolean): string {
   if (/^\s*<(!doctype|html)/i.test(clean)) {
     const text = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     const title = /<title>([^<]+)<\/title>/i.exec(clean)?.[1]?.trim();
-    return `HTML (${formatBytes(Buffer.byteLength(clean, 'utf8'))})${title ? ` — "${title}"` : ''}: ${truncate(text, ultra ? 3 : 8)}`;
+    return `HTML (${formatBytes(Buffer.byteLength(clean, 'utf8'))})${title ? ` - "${title}"` : ''}: ${truncate(text, ultra ? 3 : 8)}`;
   }
 
   const lines = clean.split('\n');

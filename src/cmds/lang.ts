@@ -1,7 +1,7 @@
 import { run } from '../core/runner';
 import { stripAnsi } from '../core/utils';
-import { HandlerResult } from './git';
 import { summarizeDiagnostics } from './build';
+import { HandlerResult } from './git';
 
 // Go and Rust toolchains multiplex several actions behind one binary
 // (`go test|build|vet`, `cargo test|build|check|clippy`). We dispatch on the

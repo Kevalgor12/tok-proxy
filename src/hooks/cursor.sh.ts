@@ -7,7 +7,7 @@ import { TOK_VERSION } from '../core/utils';
 export function generateCursorHook(version: string = TOK_VERSION, tokBin: string = 'tok'): string {
   return `#!/usr/bin/env bash
 # tok-hook-version: ${version}
-# Cursor preToolUse hook — rewrites shell commands to use tok for token savings.
+# Cursor preToolUse hook - rewrites shell commands to use tok for token savings.
 # Output protocol: {"permission":"allow","updated_input":{"command":"..."}} on rewrite,
 # {} otherwise.
 

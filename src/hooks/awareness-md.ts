@@ -9,7 +9,7 @@ export function generateAwarenessMd(version: string = TOK_VERSION): string {
 # tok awareness
 
 This project uses **tok** to compress shell command output before it reaches the AI's
-context window. Token consumption drops 60–99% on common developer commands with no
+context window. Token consumption drops 60-99% on common developer commands with no
 loss of meaningful information.
 
 ## Rule
@@ -38,7 +38,7 @@ When you would run any of the following shell commands, prefix them with \`tok\`
 | reading a JSON file       | \`tok json <file>\`    |
 
 For anything else, use the bare command. The exit code and side effects are always
-preserved — \`tok\` never silently swallows errors.
+preserved - \`tok\` never silently swallows errors.
 
 If a tok-prefixed command isn't available on the system, fall back to the bare command.
 `;

@@ -1,12 +1,13 @@
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
+
+import { claudeHookCommand, resolveTokInvocation, readRegisteredClaudeCommand } from '../core/hook';
 import { DB, setMeta } from '../core/local-db';
 import { TOK_VERSION, fileExistsSync, readFileIfExists, safeJsonParse, writeFileSafe, ensureDir, chmodIfPosix, appendErrorLog } from '../core/utils';
-import { claudeHookCommand, resolveTokInvocation, readRegisteredClaudeCommand } from '../core/hook';
-import { generateCursorHook } from '../hooks/cursor.sh';
 import { generateAwarenessMd } from '../hooks/awareness-md';
+import { generateCursorHook } from '../hooks/cursor.sh';
 
 interface InitOptions {
   claude?: boolean;
@@ -90,7 +91,7 @@ function installClaudeCode(): InstallResult[] {
   const settingsPath = path.join(claudeDir, 'settings.json');
   const hookCommand = claudeHookCommand();
 
-  // Remove the legacy script-based hooks from older tok versions — the hook is now a
+  // Remove the legacy script-based hooks from older tok versions - the hook is now a
   // single self-contained `tok hook claude` command (no shell script, no node needed).
   tryUnlink(path.join(claudeDir, 'hooks', 'tok-rewrite.sh'));
   tryUnlink(path.join(claudeDir, 'hooks', 'tok-usage.sh'));
@@ -191,7 +192,7 @@ function installCursor(): InstallResult {
     const parsed = safeJsonParse<Record<string, unknown>>(existing);
     if (parsed) cfg = parsed;
   }
-  // Drop the old shape (preToolUse: [{id, version, command:"tok proxy"}]) — it never worked.
+  // Drop the old shape (preToolUse: [{id, version, command:"tok proxy"}]) - it never worked.
   const oldPre = cfg.preToolUse as Array<Record<string, unknown>> | undefined;
   if (Array.isArray(oldPre)) {
     cfg.preToolUse = oldPre.filter((p) => p.id !== 'tok-rewrite' && !String(p.command || '').includes('tok proxy'));

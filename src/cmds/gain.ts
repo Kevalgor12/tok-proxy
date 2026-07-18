@@ -1,5 +1,5 @@
-import { DB, readCommands, CommandRow } from '../core/local-db';
 import { TokConfig } from '../core/config';
+import { DB, readCommands, CommandRow } from '../core/local-db';
 import { dollar, estimateTokens, percent, formatNumber, withinDays } from '../core/utils';
 
 interface GainArgs {
@@ -32,7 +32,7 @@ function summaryView(db: DB, config: TokConfig): string {
   const allTime = aggregate(cmds, 36500);
 
   const lines: string[] = [];
-  lines.push('tok savings — filter compression');
+  lines.push('tok savings - filter compression');
   lines.push('═'.repeat(58));
   lines.push(`Today:        ${tokRow(today, config)}`);
   lines.push(`Last 7 days:  ${tokRow(week, config)}`);

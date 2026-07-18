@@ -1,11 +1,12 @@
-import * as os from 'os';
-import * as fs from 'fs';
-import * as path from 'path';
 import { spawnSync } from 'child_process';
-import { DB, rowCounts, cacheStats, dbPath } from '../core/local-db';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
 import { TokConfig, configPath } from '../core/config';
-import { TOK_VERSION, fileExistsSync, readFileIfExists, dataDir } from '../core/utils';
 import { readRegisteredClaudeCommand, probeClaudeHook } from '../core/hook';
+import { DB, rowCounts, cacheStats, dbPath } from '../core/local-db';
+import { TOK_VERSION, fileExistsSync, readFileIfExists, dataDir } from '../core/utils';
 
 type Level = 'ok' | 'warn' | 'fail';
 
@@ -16,7 +17,7 @@ interface Check {
   fix?: string;
 }
 
-// `tok doctor` — end-to-end health check. Goes beyond `verify`/`hook-test` by also
+// `tok doctor` - end-to-end health check. Goes beyond `verify`/`hook-test` by also
 // checking the runtime environment, PATH collisions (multiple `tok` binaries), the
 // local database and the config file, and by running a live probe THROUGH the
 // installed hook exactly as the AI tool would.
@@ -36,7 +37,7 @@ export function runDoctor(db: DB, config: TokConfig): string {
   const warns = checks.filter((c) => c.level === 'warn').length;
 
   const lines: string[] = [];
-  lines.push(`tok doctor — v${TOK_VERSION}`);
+  lines.push(`tok doctor - v${TOK_VERSION}`);
   lines.push('══════════════════════════════════════════════════════════');
   for (const c of checks) {
     const tag = c.level === 'ok' ? 'OK  ' : c.level === 'warn' ? 'WARN' : 'FAIL';
@@ -62,7 +63,7 @@ function checkNode(): Check {
     level: 'warn',
     label: 'Node runtime',
     detail: `node ${process.version} is old`,
-    fix: 'upgrade to Node 16+ — the hook uses node for JSON parsing',
+    fix: 'upgrade to Node 16+ - the hook uses node for JSON parsing',
   };
 }
 
@@ -73,7 +74,7 @@ function checkBash(): Check {
     return { level: 'ok', label: 'Bash shell', detail: `bash ${v} available` };
   }
   // Not on THIS shell's PATH (e.g. running doctor from cmd.exe). The `tok hook claude`
-  // hook is a plain command — bash isn't required — but Claude Code on Windows uses
+  // hook is a plain command - bash isn't required - but Claude Code on Windows uses
   // Git Bash, so look for it in the usual spots before raising anything.
   if (process.platform === 'win32') {
     const gitBash = [
@@ -93,7 +94,7 @@ function checkBash(): Check {
   return {
     level: 'warn',
     label: 'Bash shell',
-    detail: 'bash not found — the `tok hook claude` hook usually runs without it, but Claude Code on Windows may want Git Bash',
+    detail: 'bash not found - the `tok hook claude` hook usually runs without it, but Claude Code on Windows may want Git Bash',
     fix: 'install Git for Windows if hooks don\'t fire after a restart',
   };
 }
@@ -108,7 +109,7 @@ function checkTokOnPath(): Check[] {
     return [{
       level: 'ok',
       label: 'tok on PATH',
-      detail: 'not on PATH — fine, hooks call tok by its full path. `npm link` adds a global `tok`.',
+      detail: 'not on PATH - fine, hooks call tok by its full path. `npm link` adds a global `tok`.',
     }];
   }
   const found = (r.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
@@ -132,7 +133,7 @@ function checkTokOnPath(): Check[] {
     out.push({
       level: 'warn',
       label: 'PATH collision',
-      detail: `${distinct.size} distinct "tok" binaries on PATH — the first one wins:\n        ${Array.from(distinct).join('\n        ')}`,
+      detail: `${distinct.size} distinct "tok" binaries on PATH - the first one wins:\n        ${Array.from(distinct).join('\n        ')}`,
       fix: 'remove the shadowing binaries so the intended tok is invoked',
     });
   }
@@ -145,7 +146,7 @@ function checkDatabase(db: DB): Check {
     return {
       level: 'ok',
       label: 'Local data store',
-      detail: `${dbPath()} — ${counts.commands} commands, ${counts.aiUsage} usage rows (JSON/NDJSON, zero native deps)`,
+      detail: `${dbPath()} - ${counts.commands} commands, ${counts.aiUsage} usage rows (JSON/NDJSON, zero native deps)`,
     };
   } catch (err) {
     return {
@@ -160,7 +161,7 @@ function checkDatabase(db: DB): Check {
 function checkConfig(config: TokConfig): Check {
   const p = configPath();
   if (!fileExistsSync(p)) {
-    return { level: 'ok', label: 'Config', detail: 'using built-in defaults (no config file yet — created on first run)' };
+    return { level: 'ok', label: 'Config', detail: 'using built-in defaults (no config file yet - created on first run)' };
   }
   const raw = readFileIfExists(p);
   try {
@@ -170,7 +171,7 @@ function checkConfig(config: TokConfig): Check {
     return {
       level: 'warn',
       label: 'Config',
-      detail: `${p} is not valid JSON — defaults are being used instead`,
+      detail: `${p} is not valid JSON - defaults are being used instead`,
       fix: 'fix the JSON syntax or delete the file to regenerate defaults',
     };
   }
@@ -184,7 +185,7 @@ function checkCache(db: DB, config: TokConfig): Check {
   return {
     level: 'ok',
     label: 'Output cache',
-    detail: `enabled — ${s.entries} entries, ${s.hits} hits served as markers`,
+    detail: `enabled - ${s.entries} entries, ${s.hits} hits served as markers`,
   };
 }
 

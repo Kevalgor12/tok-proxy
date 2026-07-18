@@ -63,7 +63,7 @@ export function handleGit(args: string[], ultra: boolean): HandlerResult {
   };
 }
 
-export function formatStatusOutput(raw: string, ultra = false): string {
+function formatStatusOutput(raw: string, ultra = false): string {
   const clean = stripAnsi(raw);
   if (/working tree clean/i.test(clean) || clean.trim() === '') {
     return ultra ? 'clean' : 'nothing to commit, working tree clean';
@@ -133,7 +133,7 @@ export function formatStatusOutput(raw: string, ultra = false): string {
   return parts.length ? parts.join(', ') : 'nothing to commit, working tree clean';
 }
 
-export function compactDiff(raw: string, ultra = false): string {
+function compactDiff(raw: string, ultra = false): string {
   const clean = stripAnsi(raw);
   const lines = clean.split('\n');
   let files = 0;
@@ -151,7 +151,7 @@ export function compactDiff(raw: string, ultra = false): string {
   return `${files} file${files === 1 ? '' : 's'}: +${added}/-${removed}`;
 }
 
-export function formatLog(raw: string, ultra = false): string {
+function formatLog(raw: string, ultra = false): string {
   const clean = stripAnsi(raw);
   const lines = clean.split('\n');
   const out: string[] = [];
@@ -217,7 +217,7 @@ function shortRelative(iso: string): string {
   return `${Math.floor(mo / 12)}y ago`;
 }
 
-export function compactPush(raw: string): string {
+function compactPush(raw: string): string {
   const clean = stripAnsi(raw);
   const m = /\b([\w./-]+)\s*->\s*([\w./-]+)/.exec(clean);
   if (m) return `ok ${m[1]}→${m[2]}`;
@@ -225,7 +225,7 @@ export function compactPush(raw: string): string {
   return 'ok';
 }
 
-export function compactPull(raw: string): string {
+function compactPull(raw: string): string {
   const clean = stripAnsi(raw);
   if (/Already up.to.date/i.test(clean)) return 'ok: up-to-date';
   const stat = /(\d+)\s+files?\s+changed.*?(\d+)\s+insertions?.*?(\d+)\s+deletions?/.exec(clean);

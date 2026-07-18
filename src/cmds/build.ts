@@ -71,7 +71,7 @@ export function summarizeDiagnostics(raw: string, tool: string, ultra: boolean, 
   if (errors.length === 0 && warnings === 0) {
     const okRe = /(compiled successfully|no issues|0 offenses|Finished|Found 0 errors|test result: ok)/i;
     if (exitCode === 0 || okRe.test(clean)) return ultra ? '✓' : `✓ ${tool}: clean`;
-    // Unknown failure shape — surface the tail so the error isn't lost.
+    // Unknown failure shape - surface the tail so the error isn't lost.
     const tail = lines.filter((l) => l.trim()).slice(-8).join('\n');
     return ultra ? `✗ ${tool}` : tail || `✗ ${tool} failed`;
   }

@@ -2,7 +2,7 @@ import { run } from '../core/runner';
 import { stripAnsi } from '../core/utils';
 import { HandlerResult } from './git';
 
-export interface Violation {
+interface Violation {
   file: string;
   line: number;
   rule: string;
@@ -30,7 +30,7 @@ export function handleLint(linter: 'eslint' | 'biome' | 'prettier', args: string
   };
 }
 
-export function parseViolations(raw: string): Violation[] {
+function parseViolations(raw: string): Violation[] {
   const clean = stripAnsi(raw);
   const lines = clean.split('\n');
   const out: Violation[] = [];
@@ -67,7 +67,7 @@ export function parseViolations(raw: string): Violation[] {
   return out;
 }
 
-export function groupViolations(raw: string, ultra = false): string {
+function groupViolations(raw: string, ultra = false): string {
   const violations = parseViolations(raw);
   const total = violations.length;
   if (total === 0) {

@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { configDir, ensureDir, readFileIfExists, safeJsonParse, TOK_VERSION } from './utils';
+
 import { FilterLevel } from './filter';
+import { configDir, ensureDir, readFileIfExists, safeJsonParse, TOK_VERSION } from './utils';
 
 export interface ModelPricing {
   inputPer1k: number;
@@ -135,7 +136,7 @@ export function loadConfig(): TokConfig {
       }
     }
   } catch {
-    // never throw — fall through to defaults
+    // never throw - fall through to defaults
   }
 
   if (process.env.TOK_PRICE) {
@@ -155,7 +156,7 @@ function writeDefaultConfig(): void {
     ensureDir(configDir());
     fs.writeFileSync(configPath(), JSON.stringify(DEFAULTS, null, 2));
   } catch {
-    // ignore — config is purely optional
+    // ignore - config is purely optional
   }
 }
 

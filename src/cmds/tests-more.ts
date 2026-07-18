@@ -4,7 +4,7 @@ import { HandlerResult } from './git';
 
 // Test runners that emit human-readable output (no stable JSON): pytest, rspec,
 // minitest (rake test), playwright. Each is collapsed to a pass/fail summary plus
-// the failing test names — the only part an agent needs to act on.
+// the failing test names - the only part an agent needs to act on.
 
 type MoreRunner = 'pytest' | 'rspec' | 'rake' | 'playwright';
 
