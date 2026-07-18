@@ -107,32 +107,37 @@ On a repeated `cat` of a 5 KB source file this is a ~1,400-token saving — on t
 
 ## Installation
 
-> Replace `OWNER/REPO` below with the GitHub repo you host tok in.
-
 ### Option 1 — standalone binary (recommended · no Node, no repo)
 
-Download a single self-contained executable — nothing else required. The binary bundles its own runtime, so it works like a native tool (à la a Go/Rust binary).
+A single self-contained executable — it bundles its own runtime, so it works like a native Go/Rust binary. Nothing else required.
 
-**macOS / Linux**
+**Ubuntu / Linux / macOS**
 ```
-curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | TOK_REPO=OWNER/REPO sh
+curl -fsSL https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 ```
-$env:TOK_REPO='OWNER/REPO'; iwr -useb https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.ps1 | iex
 ```
 
-The installer downloads the right binary to `~/.local/bin`, adds it to your PATH, and runs `tok init` to wire up hooks. Or grab the file for your platform straight from the [Releases](https://github.com/OWNER/REPO/releases) page — `tok-windows-x64.exe`, `tok-macos-arm64`, `tok-macos-x64`, `tok-linux-x64`, `tok-linux-arm64` — put it on your PATH as `tok`, and run `tok init`.
+The installer downloads the right binary to `~/.local/bin`, adds it to your PATH, and runs `tok init` to wire up the hooks. It picks x64 or arm64 automatically, so Apple Silicon and arm64 Linux are covered.
+
+> **macOS:** the binary is unsigned, so Gatekeeper blocks it the first time. Clear the quarantine flag once:
+> ```
+> xattr -dr com.apple.quarantine ~/.local/bin/tok
+> ```
+
+Prefer to grab the file yourself? Download the one for your platform from the [Releases](https://github.com/Kevalgor12/tok-proxy/releases) page — `tok-linux-x64`, `tok-linux-arm64`, `tok-macos-x64`, `tok-macos-arm64`, or `tok-windows-x64.exe` — put it on your PATH as `tok` (`chmod +x` on Unix), and run `tok init`.
 
 The Claude Code hook is a single `tok hook claude` command, so **the binary alone is enough — no Node, npm, or repo checkout on the end user's machine.**
 
-### Option 2 — from source (Node ≥ 16)
+### Option 2 — from source (any OS, Node ≥ 16)
 
 For development or customization. No native dependencies and no compiler step — storage is plain JSON/NDJSON files — so `npm install` can't fail on a build toolchain.
 
 ```
-git clone https://github.com/OWNER/REPO tok
+git clone https://github.com/Kevalgor12/tok-proxy.git tok
 cd tok
 npm install          # builds dist/ and runs `tok init` automatically
 npm link             # optional: a global `tok` command

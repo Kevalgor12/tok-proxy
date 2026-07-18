@@ -1,15 +1,11 @@
 #!/bin/sh
 # tok installer for macOS / Linux.
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.sh | sh
 # Downloads the standalone tok binary (no Node required), puts it on PATH, installs hooks.
-# Set TOK_REPO=owner/repo before running, or edit the default below.
 set -e
 
-REPO="${TOK_REPO:-OWNER/REPO}"   # <-- set to your GitHub owner/repo
-if [ "$REPO" = "OWNER/REPO" ]; then
-  echo "Set TOK_REPO=youruser/tok first (the repo hosting the release binaries)." >&2
-  exit 1
-fi
+# Override with TOK_REPO=owner/repo to install from a fork.
+REPO="${TOK_REPO:-Kevalgor12/tok-proxy}"
 
 OS=$(uname -s)
 ARCH=$(uname -m)
