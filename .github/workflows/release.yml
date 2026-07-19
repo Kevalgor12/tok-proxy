@@ -1,9 +1,9 @@
 name: Release binaries
 
 # Push a version tag (`git tag v0.3.0 && git push --tags`) to build the standalone tok
-# binary for every platform and attach it to the GitHub Release. Each binary is built
-# on its NATIVE runner, which avoids pkg's cross-arch limitations (arm64 can't be
-# cross-built from an x64 host).
+# binary for every platform and attach it to the GitHub Release. arm64 targets must build
+# on a native arm runner (pkg can't cross-build those); x64 targets build anywhere, so the
+# macOS x64 binary is built on Linux to skip the scarce, slow-to-schedule Intel-mac runner.
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
           - os: ubuntu-24.04-arm
             target: node22-linux-arm64
             out: tok-linux-arm64
-          - os: macos-13
+          - os: ubuntu-latest
             target: node22-macos-x64
             out: tok-macos-x64
           - os: macos-14
