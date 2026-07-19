@@ -30,6 +30,13 @@ echo "Downloading $URL ..."
 curl -fsSL "$URL" -o "$DEST"
 chmod +x "$DEST"
 
+# macOS: drop any quarantine flag and ad-hoc sign so Gatekeeper lets it run.
+# Apple Silicon won't launch an unsigned binary, so the signature is required, not optional.
+if [ "$os" = "macos" ]; then
+  xattr -d com.apple.quarantine "$DEST" 2>/dev/null || true
+  codesign --force --sign - "$DEST" 2>/dev/null || true
+fi
+
 # Nudge PATH if needed.
 case ":$PATH:" in
   *":$DIR:"*) ;;
