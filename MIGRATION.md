@@ -1,7 +1,10 @@
 # tok: Node to Go migration
 
-tok is being rewritten from Node/TypeScript to Go. Same behavior, same CLI, same hook
-protocol - a single native binary instead of a bundled Node runtime.
+tok has been rewritten from Node/TypeScript to Go: a single native binary instead of a
+bundled Node runtime, with the same behavior, CLI, and hook protocol.
+
+**Status: complete.** All 10 phases are done - 13 `internal` packages plus `cmd/tok`, pure
+standard library (`go.mod` has no `require`s), and the Node source has been removed.
 
 ## Why
 
@@ -56,5 +59,7 @@ earlier ones.
 | 9 | CLI wiring | full dispatch + help + global flags in `cmd/tok` |
 | 10 | Release + cleanup | Go cross-compile workflow, installers, README; remove Node source |
 
-The Node source stays in place until phase 10 so nothing breaks mid-migration; the last
-phase deletes `src/`, `package.json`, `dist/`, and the pkg tooling.
+The Node source stayed in place until phase 10 so nothing broke mid-migration; that phase
+removed `src/`, `package.json`, `package-lock.json`, `tsconfig.json`, and the pkg/npm
+tooling, and replaced the release workflow with a `GOOS`/`GOARCH` cross-compile that builds
+all five platform binaries from one Linux runner.

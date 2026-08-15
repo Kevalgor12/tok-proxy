@@ -1,16 +1,10 @@
-# Build output — regenerated on install by scripts/postinstall.js
-dist/
-
-# Standalone binaries — release artifacts, attach to GitHub Releases (not committed)
+# Standalone binaries - release artifacts, attached to GitHub Releases (not committed)
 build/
 
 # Go build output
 /tok
 /tok.exe
 *.test
-
-# Dependencies
-node_modules/
 
 # Local scratch / logs
 .tmp/

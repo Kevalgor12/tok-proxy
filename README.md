@@ -76,7 +76,7 @@ On a repeated `cat` of a 5 KB source file this is a ~1,400-token saving — on t
 
 `tok doctor` runs an end-to-end health check and tells you exactly what to fix:
 
-- **Runtime** — Node and Bash availability (hooks need both).
+- **Runtime** — the tok binary (self-contained Go — the Claude hook needs no node) and Bash.
 - **PATH** — resolves every `tok` on PATH through symlinks/shims and warns only on genuinely distinct binaries that would shadow each other.
 - **Data store** — opens the local JSON/NDJSON files and reports row counts.
 - **Config** — validates the JSON, falls back to defaults on error.
@@ -109,7 +109,7 @@ On a repeated `cat` of a 5 KB source file this is a ~1,400-token saving — on t
 
 ### Option 1 — standalone binary (recommended · no Node, no repo)
 
-A single self-contained executable — it bundles its own runtime, so it works like a native Go/Rust binary. Nothing else required.
+A single self-contained Go binary — no runtime, no dependencies, nothing else required.
 
 **Ubuntu / Linux / macOS**
 ```
@@ -132,26 +132,32 @@ Prefer to grab the file yourself? Download the one for your platform from the [R
 
 The Claude Code hook is a single `tok hook claude` command, so **the binary alone is enough — no Node, npm, or repo checkout on the end user's machine.**
 
-### Option 2 — from source (any OS, Node ≥ 16)
+### Option 2 — from source (any OS, Go ≥ 1.23)
 
-For development or customization. No native dependencies and no compiler step — storage is plain JSON/NDJSON files — so `npm install` can't fail on a build toolchain.
+For development or customization. tok is a pure Go module with **zero third-party dependencies** — just the standard library — so a checkout builds with nothing but the Go toolchain.
 
 ```
 git clone https://github.com/Kevalgor12/tok-proxy.git tok
 cd tok
-npm install          # builds dist/ and runs `tok init` automatically
-npm link             # optional: a global `tok` command
+go build -o tok ./cmd/tok       # produces the standalone binary
+./tok init                      # detect AI tools and install hooks
 ```
 
-Re-run setup any time with `npm run setup`; skip it during install with `TOK_SKIP_SETUP=1` (also skipped automatically in CI).
+Or `go install ./cmd/tok` to drop a global `tok` on your `GOBIN`. Re-run `tok init` any time to refresh the hooks after an upgrade.
 
 ### Building the binaries yourself
 
+Go cross-compiles every target from a single machine — no native arm or Intel-mac hosts needed:
+
 ```
-npm run build:binaries          # → build/tok-windows-x64.exe, tok-linux-x64, tok-macos-x64, …
+GOOS=linux   GOARCH=amd64 go build -o build/tok-linux-x64       ./cmd/tok
+GOOS=linux   GOARCH=arm64 go build -o build/tok-linux-arm64     ./cmd/tok
+GOOS=darwin  GOARCH=amd64 go build -o build/tok-macos-x64       ./cmd/tok
+GOOS=darwin  GOARCH=arm64 go build -o build/tok-macos-arm64     ./cmd/tok
+GOOS=windows GOARCH=amd64 go build -o build/tok-windows-x64.exe ./cmd/tok
 ```
 
-pkg cross-compiles the **x64** targets from any machine. The two **arm64** builds (`tok-linux-arm64`, `tok-macos-arm64`) must run on a native arm host. The included **`.github/workflows/release.yml`** handles this: push a `v*` tag and it builds all five on native runners and attaches them to the GitHub Release — the installers then download them by name.
+The included **`.github/workflows/release.yml`** does exactly this on a `v*` tag push — building all five from one Linux runner and attaching them to the GitHub Release, which the installers then download by name.
 
 After any install method, **restart your AI tool**, then run `tok doctor` to confirm every hook is wired up.
 
@@ -161,12 +167,12 @@ After any install method, **restart your AI tool**, then run `tok doctor` to con
 
 | Tool | Hook type | Mechanism |
 |---|---|---|
-| **Claude Code** | Transparent | `PreToolUse` hook runs `tok hook claude` (no script/node) |
-| **Cursor** | Transparent | `~/.cursor/hooks.json` `preToolUse` entry |
-| **VS Code Copilot** | Transparent | `settings.json` `tokWrap` entry |
-| **Gemini CLI** | Transparent | `~/.gemini/settings.json` `BeforeTool` |
-| **Windsurf** | Instruction | `.windsurfrules` block |
-| **Cline / Roo Code** | Instruction | `.clinerules` block |
+| **Claude Code** | Transparent | `PreToolUse` hook runs `tok hook claude` (no script, no node) |
+| **Cursor** | Transparent | `~/.cursor/hooks.json` `preToolUse` → `tok-rewrite.sh` |
+| **VS Code Copilot** | Instruction | `tok-awareness.md` in the VS Code user dir |
+| **Gemini CLI** | Instruction | `tok-awareness.md` in `~/.gemini` |
+| **Windsurf** | Instruction | `tok-awareness.md` in `~/.codeium/windsurf` |
+| **Cline / Roo Code** | Instruction | `tok-awareness.md` in `~/.cline` |
 
 `tok init` with no flags auto-detects every installed tool and installs the right hook for each.
 
@@ -256,7 +262,6 @@ After any install method, **restart your AI tool**, then run `tok doctor` to con
 | `tok init --claude` / `--cursor` / `--copilot` / `--gemini` / `--windsurf` / `--cline` | Install for one specific tool |
 | `tok init --uninstall` | Remove all hooks cleanly |
 | `tok init --show` | Print hook status |
-| `npm run setup` | Rebuild + reinstall hooks (run after `git pull`) |
 | `tok version` | Version + local row counts |
 
 ---
@@ -297,7 +302,7 @@ The file is created with defaults on first run. Missing or malformed configs are
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "tokenPricePer1k": 0.015,
   "tee": { "enabled": true, "mode": "failures" },
   "filters": {
@@ -337,7 +342,7 @@ The file is created with defaults on first run. Missing or malformed configs are
 | `TOK_NO_TRACK=1` | Skip the local write for this invocation |
 | `TOK_NO_CACHE=1` | Bypass the output cache |
 | `TOK_ULTRA_COMPACT=1` | Force ultra-compact mode |
-| `TOK_SKIP_SETUP=1` | Skip the auto build+init during `npm install` |
+| `TOK_HOME` | Override the data/config directory (default `~/.tok`) |
 
 ---
 
@@ -389,19 +394,18 @@ tok needs raw AI usage data to compute `tok stats` and `tok econ`. There are thr
 Restart the AI tool — hooks are loaded at startup. If still no activity, run `tok init --show` and confirm the hook file path matches what the AI tool reads.
 
 **`tok stats` shows "No AI usage data yet"**
-Run `tok usage ingest --claude-code` (or `--ccusage`). The PostToolUse hook only captures new activity — historical data has to be backfilled once.
+Run `tok usage ingest --claude-code` (or `--ccusage`). Usage data is backfilled from your Claude Code logs — tok doesn't capture it live, so ingest once to populate `tok stats` and `tok econ`.
 
 **Builds in CI suddenly fail**
 tok always preserves the real exit code. If a CI step started failing right after install, run with `-vv` (or set `TOK_NO_TRACK=1` to bypass) and check the raw output. File a bug if the filter dropped meaningful error context — tok's TEE system should write the full output to `~/.tok/tee/...` whenever a failure has a short filtered output.
 
 **Something misbehaving?**
-Run `tok doctor` — it checks Node/Bash, PATH collisions, the data store, config, and the hook logic. Detailed errors are logged to `~/.tok/errors.log`.
+Run `tok doctor` — it checks the tok runtime and Bash, PATH collisions, the data store, config, and the hook logic. Detailed errors are logged to `~/.tok/errors.log`.
 
 **I want to remove tok entirely**
 ```
-tok init --uninstall            # or: node dist/main.js init --uninstall
-npm rm -g tok-proxy             # only if you ran `npm link` / `npm install -g`
+tok init --uninstall            # remove every hook cleanly
 rm -rf ~/.tok                   # all local data + config
 ```
 
-On Windows that's `rmdir /s "%USERPROFILE%\.tok"`. Then delete the binary (`~/.local/bin/tok.exe`) or the cloned folder.
+On Windows that's `rmdir /s "%USERPROFILE%\.tok"`. Then delete the binary at `~/.local/bin/tok` (`tok.exe` on Windows) or the cloned folder.

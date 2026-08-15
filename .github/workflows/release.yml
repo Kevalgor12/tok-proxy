@@ -1,52 +1,51 @@
 name: Release binaries
 
-# Push a version tag (`git tag v0.3.0 && git push --tags`) to build the standalone tok
-# binary for every platform and attach it to the GitHub Release. arm64 targets must build
-# on a native arm runner (pkg can't cross-build those); x64 targets build anywhere, so the
-# macOS x64 binary is built on Linux to skip the scarce, slow-to-schedule Intel-mac runner.
+# Push a version tag (`git tag v0.4.0 && git push --tags`) to cross-compile the standalone
+# tok binary for every platform and attach it to the GitHub Release. Go cross-compiles all
+# targets from a single Linux runner - no native arm or Intel-mac runners required - and the
+# output names match what scripts/install.sh and scripts/install.ps1 download.
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    permissions:
-      contents: write
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            target: node22-win-x64
-            out: tok-windows-x64.exe
-          - os: ubuntu-latest
-            target: node22-linux-x64
+          - goos: linux
+            goarch: amd64
             out: tok-linux-x64
-          - os: ubuntu-24.04-arm
-            target: node22-linux-arm64
+          - goos: linux
+            goarch: arm64
             out: tok-linux-arm64
-          - os: ubuntu-latest
-            target: node22-macos-x64
+          - goos: darwin
+            goarch: amd64
             out: tok-macos-x64
-          - os: macos-14
-            target: node22-macos-arm64
+          - goos: darwin
+            goarch: arm64
             out: tok-macos-arm64
-    runs-on: ${{ matrix.os }}
+          - goos: windows
+            goarch: amd64
+            out: tok-windows-x64.exe
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-go@v5
         with:
-          node-version: '22'
-      - name: Install deps (skip hook setup on CI)
-        run: npm install
+          go-version: stable
+      - name: Build
         env:
-          TOK_SKIP_SETUP: '1'
-      - name: Compile
-        run: npm run build
-      - name: Package native binary
-        run: npx pkg dist/main.js --targets ${{ matrix.target }} --output build/${{ matrix.out }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags "-s -w" -o "build/${{ matrix.out }}" ./cmd/tok
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
