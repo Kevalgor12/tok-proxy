@@ -38,6 +38,19 @@ func finalize(filtered string, r run.Result, raw, cmdType string) Result {
 	return Result{Filtered: filtered, Exit: r.ExitCode, Raw: raw, CmdType: cmdType, ExecMs: r.ExecMs}
 }
 
+// finalizeRaw is the common fallback for the toolchain handlers: an empty filtered
+// output becomes "ok" on success, or the full raw output on failure.
+func finalizeRaw(filtered string, r run.Result, raw, cmdType string) Result {
+	if filtered == "" {
+		if r.ExitCode == 0 {
+			filtered = "ok"
+		} else {
+			filtered = raw
+		}
+	}
+	return Result{Filtered: filtered, Exit: r.ExitCode, Raw: raw, CmdType: cmdType, ExecMs: r.ExecMs}
+}
+
 func firstNonEmpty(a, b string) string {
 	if a != "" {
 		return a
