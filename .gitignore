@@ -4,6 +4,11 @@ dist/
 # Standalone binaries — release artifacts, attach to GitHub Releases (not committed)
 build/
 
+# Go build output
+/tok
+/tok.exe
+*.test
+
 # Dependencies
 node_modules/
 
