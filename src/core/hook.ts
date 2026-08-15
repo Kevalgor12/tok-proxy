@@ -40,25 +40,33 @@ export function buildClaudeHookOutput(payload: string): string | null {
   return JSON.stringify({ hookSpecificOutput });
 }
 
-// How the hook should invoke tok. Preference:
-//   1. `tok` on PATH (a global npm link or a binary already on PATH) - clean + portable.
-//   2. A packaged single-file binary that isn't on PATH yet (e.g. mid-install): invoke
-//      ourselves by absolute path so the hook works before PATH changes take effect.
-//   3. A source checkout: `node <abs main.js>`.
+// How the hook should invoke tok - always an ABSOLUTE path, never bare `tok`.
+// Claude Code runs the hook in a fresh shell (Git Bash on Windows) whose PATH may not
+// include tok's directory. That's especially true for Store/MSIX-packaged hosts (Claude
+// Desktop, Store VS Code), where a bare `tok` silently fails and every command runs
+// un-rewritten. An absolute path sidesteps PATH entirely.
 export function resolveTokInvocation(): string {
-  if (whichTok()) return 'tok';
-  if ((process as unknown as { pkg?: unknown }).pkg) {
-    const exe = process.execPath.replace(/\\/g, '/');
-    return /\s/.test(exe) ? `"${exe}"` : exe;
-  }
-  const mainJs = path.resolve(__dirname, '..', 'main.js').replace(/\\/g, '/');
-  return `node ${mainJs}`;
+  // Packaged binary: point the hook at this exact executable.
+  if ((process as unknown as { pkg?: unknown }).pkg) return shellPath(process.execPath);
+  // Otherwise resolve `tok` on PATH and use its full path, not the bare name.
+  const onPath = whichTokPath();
+  if (onPath) return shellPath(onPath);
+  // Source checkout.
+  return `node ${shellPath(path.resolve(__dirname, '..', 'main.js'))}`;
 }
 
-function whichTok(): boolean {
+// Absolute path of `tok` on PATH, or null.
+function whichTokPath(): string | null {
   const isWin = process.platform === 'win32';
   const r = spawnSync(isWin ? 'where' : 'which', ['tok'], { encoding: 'utf8', shell: isWin });
-  return r.status === 0;
+  if (r.status !== 0) return null;
+  return (r.stdout || '').split(/\r?\n/).map((s) => s.trim()).find(Boolean) || null;
+}
+
+// Path for a hook command string: forward slashes (Git Bash accepts them), quoted if spaced.
+function shellPath(p: string): string {
+  const s = p.replace(/\\/g, '/');
+  return /\s/.test(s) ? `"${s}"` : s;
 }
 
 // The command string registered in settings.json (e.g. "tok hook claude").
