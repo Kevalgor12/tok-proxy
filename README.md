@@ -1,414 +1,325 @@
 # tok
 
-A CLI proxy that reduces LLM token consumption by 60–99% on common developer commands. tok sits transparently between your AI coding tool and your shell, compresses verbose command output into compact summaries, and saves the difference off your token bill. **100% local — nothing ever leaves your machine.**
+Save tokens when your AI coding assistant runs shell commands. tok compresses noisy command output (test runs, installs, builds, git, logs) into short summaries before it reaches the model, so you pay for less. Everything runs on your machine. No account, no server, no telemetry.
 
----
+## Contents
 
-## What tok does
+- [What it is](#what-it-is)
+- [Why use it](#why-use-it)
+- [How it saves tokens](#how-it-saves-tokens)
+- [Supported AI tools](#supported-ai-tools)
+- [Supported operating systems](#supported-operating-systems)
+- [Download and install](#download-and-install)
+- [Quick start](#quick-start)
+- [Commands](#commands)
+- [Configuration](#configuration)
+- [Privacy](#privacy)
+- [Uninstall](#uninstall)
 
-When an AI coding tool (Claude Code, Cursor, Copilot, Gemini CLI, Windsurf, Cline) runs a shell command internally, a `PreToolUse` hook rewrites it to the tok equivalent before execution. tok runs the real command on your local machine, applies one of its filtering strategies, and returns a compact result back to the AI. The model sees a tiny payload; you pay for the tiny payload; your CI/CD pipelines never see a difference.
+## What it is
+
+AI coding assistants run shell commands for you and send the output back to the model so it can decide what to do next. That output is often long and repetitive, and every line of it costs tokens. tok sits between the assistant and your shell. It runs the real command, keeps the part that matters, and hands back a compact version.
+
+Your own terminal is not affected. tok only touches commands the assistant runs inside its own shell.
+
+## Why use it
+
+- Long command output is mostly noise. A passing test suite, a clean install, or a full `git status` can be hundreds or thousands of tokens that add nothing useful.
+- Tokens cost money and fill the context window. Shrinking command output lowers the bill and leaves more room for real work.
+- It is fully local. tok never sends your commands or output anywhere.
+
+## How it saves tokens
+
+Example with `git status`:
 
 ```
-WITHOUT tok:
-  AI tool runs: git status
-  Raw output (2,000 tokens) → sent to AI model → you pay for 2,000 tokens
+Without tok
+  assistant runs: git status
+  full output (about 2,000 tokens) goes to the model
 
-WITH tok:
-  AI tool tries to run: git status
-  PreToolUse hook fires → rewrites to: tok git status (AI never sees this)
-  tok runs real git status on your machine
-  tok compresses output → "3 modified, 1 untracked" (15 tokens)
-  AI model receives 15 tokens → you pay for 15 tokens
-  tok logs the savings to local files — no network, no telemetry
+With tok
+  assistant runs: tok git status
+  tok runs the real git status on your machine
+  tok returns: "3 modified, 1 untracked" (about 15 tokens)
 ```
 
-Your real terminal is completely untouched. tok only intercepts commands run inside the AI tool's internal bash executor.
+tok always runs the real command and keeps its exit code. It only changes what the model sees.
 
----
+Typical reductions:
 
-## How it works — 9 filtering strategies
-
-| # | Strategy | Used by | Reduction |
-|---|---|---|---|
-| 1 | Stats extraction | `git status`, `git diff`, `git log` | 92–97% |
-| 2 | Error only | `tok err <cmd>` | 60–100% |
-| 3 | Grouping by pattern | `eslint`, `tsc`, `grep` | 75–90% |
-| 4 | Deduplication | `docker logs`, generic fallback | 70–99% |
-| 5 | Structure only | `tok json <file>` | 80–99% |
-| 6 | Code filtering | `tok cat <file>` | 0–90% |
-| 7 | Failure focus | `jest`, `vitest`, `mocha` | 94–99.5% |
-| 8 | Tree compression | `tok ls` | 50–95% |
-| 9 | Progress filtering | `npm install`, `pnpm install` | 85–98% |
-
-**Examples:**
-
-| Command | Standard | Ultra (`-u`) |
+| Command | What tok returns | Reduction |
 |---|---|---|
-| `git status` | `3 modified, 1 untracked` | `3M 1U` |
-| `tsc` | `4 errors in 2 files` (grouped) | `4E/2F` |
-| `jest` | `2 failed, 98 passed (100 total)` | `✗2/100` |
-| `npm install` | `✓ Installed 234 packages` | `✓234pkg` |
-| `ls` | Tree view, noise dirs hidden | `src/32 tests/15 docs/3` |
+| git status, diff, log | change counts and stats | 90 to 97 percent |
+| jest, vitest, pytest | failures only, summary when green | 95 to 99 percent |
+| npm, pnpm, yarn install | installed count and new packages | 85 to 98 percent |
+| tsc, eslint, ruff | issues grouped by file and rule | 75 to 90 percent |
+| ls, cat, grep, find | tree view, code aware, grouped matches | 50 to 95 percent |
+| docker, kubectl logs | repeated lines removed | 70 to 99 percent |
 
----
-
-## Advanced features
-
-Two capabilities go beyond one-shot output compression.
-
-### Output cache — unchanged-detection
-
-AI agents re-run the same idempotent reads constantly: `git status`, `ls`, `cat <file>`, `grep`. The first time tok runs one of these it filters and returns the compact output as usual and remembers a hash of the underlying command output, keyed by **command + working directory + arguments**. On the next identical run, if the underlying output is byte-for-byte unchanged, tok returns a ~15-token marker instead of the whole payload:
-
-```
-◇ unchanged 3× (cat, 12s ago) — ~1381 tok saved; already in context. --no-cache to force.
-```
-
-- The real command **always executes** — exit codes and side effects are never skipped. tok only shrinks what the model sees, and only for the read-only commands on the `cache.commands` allowlist.
-- Identity is decided on the *filtered* output — exactly what the model would see — so the "unchanged" claim is always literally true. Volatile derived values (a relative timestamp in `git log`) only ever cause a harmless cache *miss*, never a false "unchanged".
-- The marker is only served when it is actually smaller than the filtered output, so already-tiny results (`3 modified`) are never made larger.
-- Bypass per-call with `--no-cache` / `TOK_NO_CACHE=1`, or globally with `"cache": { "enabled": false }`.
-- Inspect it with `tok cache` / `tok cache --list`; empty it with `tok cache --clear`.
-
-On a repeated `cat` of a 5 KB source file this is a ~1,400-token saving — on top of the initial filter.
-
-### `tok doctor` — self-diagnosis
-
-`tok doctor` runs an end-to-end health check and tells you exactly what to fix:
-
-- **Runtime** — the tok binary (self-contained Go — the Claude hook needs no node) and Bash.
-- **PATH** — resolves every `tok` on PATH through symlinks/shims and warns only on genuinely distinct binaries that would shadow each other.
-- **Data store** — opens the local JSON/NDJSON files and reports row counts.
-- **Config** — validates the JSON, falls back to defaults on error.
-- **Hooks** — for each AI tool: script present, version current, registered in settings, and a **live probe** that pipes a fake `Bash` tool-call through the installed hook and asserts it rewrites to a `tok` command — the same path the AI tool takes.
-
-```
-  OK    Claude Code live probe
-        sent {command:"git status"} → hook rewrote to "tok git status"
-```
-
----
-
-## Token savings table
-
-| Command type | Typical reduction | Scenario |
-|---|---|---|
-| `tok git status` | 95% | clean repo or small change set |
-| `tok git diff` | 97% | feature branch with many file changes |
-| `tok git log` | 90% | last 20 commits |
-| `tok tsc` | 85% | grouped errors instead of full TS output |
-| `tok jest` / `tok vitest` | 99% on green, 95% on red | failure focus |
-| `tok eslint` | 80% | grouped by rule + top files |
-| `tok npm install` | 95% | installed count + new deps |
-| `tok docker logs` | 90% | deduplicated repeated lines |
-| `tok ls` | 60–95% | noise dirs skipped, deep dirs collapsed |
-
----
-
-## Installation
-
-### Option 1 — standalone binary (recommended · no Node, no repo)
-
-A single self-contained Go binary — no runtime, no dependencies, nothing else required.
-
-**Ubuntu / Linux / macOS**
-```
-curl -fsSL https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.sh | sh
-```
-
-**Windows (PowerShell)**
-```
-iwr -useb https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.ps1 | iex
-```
-
-The installer downloads the right binary to `~/.local/bin`, adds it to your PATH, and runs `tok init` to wire up the hooks. It picks x64 or arm64 automatically, so Apple Silicon and arm64 Linux are covered.
-
-> **macOS:** the binary is unsigned, so Gatekeeper blocks it the first time. Clear the quarantine flag once:
-> ```
-> xattr -dr com.apple.quarantine ~/.local/bin/tok
-> ```
-
-Prefer to grab the file yourself? Download the one for your platform from the [Releases](https://github.com/Kevalgor12/tok-proxy/releases) page — `tok-linux-x64`, `tok-linux-arm64`, `tok-macos-x64`, `tok-macos-arm64`, or `tok-windows-x64.exe` — put it on your PATH as `tok` (`chmod +x` on Unix), and run `tok init`.
-
-The Claude Code hook is a single `tok hook claude` command, so **the binary alone is enough — no Node, npm, or repo checkout on the end user's machine.**
-
-### Option 2 — from source (any OS, Go ≥ 1.23)
-
-For development or customization. tok is a pure Go module with **zero third-party dependencies** — just the standard library — so a checkout builds with nothing but the Go toolchain.
-
-```
-git clone https://github.com/Kevalgor12/tok-proxy.git tok
-cd tok
-go build -o tok ./cmd/tok       # produces the standalone binary
-./tok init                      # detect AI tools and install hooks
-```
-
-Or `go install ./cmd/tok` to drop a global `tok` on your `GOBIN`. Re-run `tok init` any time to refresh the hooks after an upgrade.
-
-### Building the binaries yourself
-
-Go cross-compiles every target from a single machine — no native arm or Intel-mac hosts needed:
-
-```
-GOOS=linux   GOARCH=amd64 go build -o build/tok-linux-x64       ./cmd/tok
-GOOS=linux   GOARCH=arm64 go build -o build/tok-linux-arm64     ./cmd/tok
-GOOS=darwin  GOARCH=amd64 go build -o build/tok-macos-x64       ./cmd/tok
-GOOS=darwin  GOARCH=arm64 go build -o build/tok-macos-arm64     ./cmd/tok
-GOOS=windows GOARCH=amd64 go build -o build/tok-windows-x64.exe ./cmd/tok
-```
-
-The included **`.github/workflows/release.yml`** does exactly this on a `v*` tag push — building all five from one Linux runner and attaching them to the GitHub Release, which the installers then download by name.
-
-After any install method, **restart your AI tool**, then run `tok doctor` to confirm every hook is wired up.
-
----
+tok also caches read-only commands. If the assistant runs the same `git status` or `cat` again and the result has not changed, tok returns a small "unchanged" marker instead of the whole output.
 
 ## Supported AI tools
 
-| Tool | Hook type | Mechanism |
-|---|---|---|
-| **Claude Code** | Transparent | `PreToolUse` hook runs `tok hook claude` (no script, no node) |
-| **Cursor** | Instruction | tok rule in `~/.cursor/rules/tok.mdc` (its hooks can't rewrite commands) |
-| **Antigravity** | Instruction | tok rule in `~/.gemini/AGENTS.md` |
-| **Windsurf** | Instruction | tok rule in `~/.codeium/windsurf/memories/global_rules.md` |
-| **VS Code Copilot** | Instruction | `tok-awareness.md` in the VS Code user dir |
-| **Gemini CLI** | Instruction | `tok-awareness.md` in `~/.gemini` |
-| **Cline / Roo Code** | Instruction | `tok-awareness.md` in `~/.cline` |
+tok works in two modes:
 
-`tok init` with no flags auto-detects every installed tool and installs the right integration for each.
+- **Automatic**: tok intercepts the command and compresses the output on its own.
+- **Guided**: tok adds a usage rule that asks the assistant to run commands through tok. Savings depend on the assistant following the rule.
 
-**Transparent vs instruction — read this.** Only **Claude Code** exposes a hook that can actually *rewrite* a command, so it's the only tool tok intercepts silently with automatic, reliable savings. **Every other tool** — Cursor, Antigravity, Windsurf, Copilot, Gemini, Cline — has hooks that can only allow/deny/ask, never transform a command ([Cursor](https://cursor.com/docs/hooks), [Antigravity](https://antigravity.google/docs/hooks/), and [Windsurf](https://docs.windsurf.com/windsurf/cascade/hooks) all confirm this). For those, tok writes a rule asking the model to prefix `tok` itself — **best-effort: savings depend on the model following the rule, and will be lower and less consistent than Claude Code.** Only Windows + Claude Code is verified end-to-end today; other IDEs and macOS/Linux are built to spec but need real-world validation.
+| Tool | Mode |
+|---|---|
+| Claude Code | Automatic |
+| Antigravity | Automatic |
+| Cursor | Guided (optional enforced mode) |
+| Windsurf | Guided (optional enforced mode) |
+| GitHub Copilot (VS Code) | Guided |
+| Gemini CLI | Guided |
+| Cline / Roo Code | Guided |
 
----
+`tok init` detects the tools you have installed and sets up each one for you.
 
-## Command reference
+## Supported operating systems
+
+| OS | Architectures |
+|---|---|
+| Linux | x64, arm64 |
+| macOS | Intel (x64), Apple Silicon (arm64) |
+| Windows | x64 |
+
+## Download and install
+
+tok is a single self-contained binary. No Node, no runtime, nothing else to install.
+
+### One-line install (recommended)
+
+Linux and macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/Kevalgor12/tok-proxy/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the right binary for your system, puts it in `~/.local/bin`, adds that folder to your PATH, and sets up the hooks. Open a new terminal afterward so the PATH change takes effect.
+
+### Direct download
+
+Prefer to grab the file yourself? Download the build for your system:
+
+| OS | Download |
+|---|---|
+| Linux x64 | [tok-linux-x64](https://github.com/Kevalgor12/tok-proxy/releases/latest/download/tok-linux-x64) |
+| Linux arm64 | [tok-linux-arm64](https://github.com/Kevalgor12/tok-proxy/releases/latest/download/tok-linux-arm64) |
+| macOS Intel | [tok-macos-x64](https://github.com/Kevalgor12/tok-proxy/releases/latest/download/tok-macos-x64) |
+| macOS Apple Silicon | [tok-macos-arm64](https://github.com/Kevalgor12/tok-proxy/releases/latest/download/tok-macos-arm64) |
+| Windows x64 | [tok-windows-x64.exe](https://github.com/Kevalgor12/tok-proxy/releases/latest/download/tok-windows-x64.exe) |
+
+Every version is listed on the [Releases page](https://github.com/Kevalgor12/tok-proxy/releases).
+
+On Linux and macOS, rename it to `tok`, make it executable, move it onto your PATH, and set up the hooks:
+
+```bash
+mv tok-linux-x64 tok
+chmod +x tok
+mv tok ~/.local/bin/
+tok init
+```
+
+On macOS the binary is unsigned, so the first run may be blocked. Clear the flag once:
+
+```bash
+xattr -dr com.apple.quarantine ~/.local/bin/tok
+```
+
+On Windows, rename the file to `tok.exe`, move it to a folder on your PATH (for example `%USERPROFILE%\.local\bin`), then run:
+
+```powershell
+tok init
+```
+
+### Build from source
+
+Needs Go 1.23 or newer. tok uses only the Go standard library, so a checkout builds with just the Go toolchain.
+
+```bash
+git clone https://github.com/Kevalgor12/tok-proxy.git
+cd tok-proxy
+go build -o tok ./cmd/tok
+./tok init
+```
+
+## Quick start
+
+1. Install tok using any method above.
+2. Restart your AI tool so it loads the hooks.
+3. Confirm everything is wired up:
+
+```bash
+tok doctor
+```
+
+`tok doctor` checks the binary, your PATH, the data files, and each hook, and tells you what to fix if anything is off.
+
+After a few sessions, see what you saved:
+
+```bash
+tok gain
+```
+
+## Commands
+
+Run `tok --help` at any time for the complete list. tok reads the first word of the command and applies the matching compression.
 
 ### Proxy commands
 
-| Command | Behaviour |
+| Command | What it does |
 |---|---|
 | `tok git <args>` | Compressed git output |
-| `tok npm`/`pnpm`/`yarn <args>` | Compressed package manager output |
-| `tok pip`/`uv`/`bundle`/`gem`/`prisma <args>` | Installs → counts; codegen → one line |
-| `tok tsc <args>` | TypeScript errors grouped by file + code |
-| `tok jest`/`vitest`/`mocha <args>` | Failures only on red, summary on green |
-| `tok pytest`/`rspec <args>` | Python / Ruby test failures + summary |
-| `tok rake test` / `tok playwright test` | Minitest / Playwright failures + summary |
-| `tok go <test\|build\|vet>` | Go tests + build diagnostics |
-| `tok cargo <test\|build\|clippy>` | Rust tests + compiler diagnostics |
-| `tok eslint`/`biome`/`prettier <args>` | Violations grouped by rule + file |
-| `tok ruff`/`golangci-lint`/`rubocop <args>` | Diagnostics grouped by code |
-| `tok next build` | Build diagnostics, route table dropped |
-| `tok gh <pr\|issue\|run> ...` | GitHub CLI tables → counts + identifiers |
-| `tok ls [path]` | Tree view, noise dirs hidden |
-| `tok cat <file>` | Code-aware filtering (comments, bodies) |
+| `tok npm / pnpm / yarn <args>` | Compressed package manager output |
+| `tok pip / uv / bundle / gem / prisma <args>` | Installs become counts, codegen becomes one line |
+| `tok tsc <args>` | TypeScript errors grouped by file and code |
+| `tok jest / vitest / mocha <args>` | Failures when red, summary when green |
+| `tok pytest / rspec <args>` | Python and Ruby test results |
+| `tok rake test`, `tok playwright test` | Minitest and Playwright results |
+| `tok go <test, build, vet>` | Go tests and build output |
+| `tok cargo <test, build, clippy>` | Rust tests and compiler output |
+| `tok eslint / biome / prettier <args>` | Lint issues grouped by rule and file |
+| `tok ruff / golangci-lint / rubocop <args>` | Diagnostics grouped by code |
+| `tok next build` | Build output, route table dropped |
+| `tok gh <pr, issue, run> ...` | GitHub CLI tables become counts |
+| `tok ls [path]` | Tree view, noise folders hidden |
+| `tok cat <file>` | Code-aware filtering |
 | `tok grep <pattern> [path]` | Matches grouped by file |
-| `tok find [args]` | Compact list with overflow indicator |
+| `tok find [args]` | Compact list |
 | `tok diff <a> <b>` | Stats only |
-| `tok json <file>` | JSON keys + types only |
-| `tok smart <file>` | Two-line file summary |
-| `tok docker <args>` | Deduplicated, error-focused |
+| `tok json <file>` | Keys and types only |
+| `tok smart <file>` | Short file summary |
+| `tok docker <args>` | Deduplicated, error focused |
 | `tok kubectl <args>` | Same as docker |
-| `tok pulumi`/`terraform <args>` | Infra plans → change summary (+/~/-) |
-| `tok curl`/`wget <args>` | Large bodies compressed (JSON→structure) |
-| `tok env` | Variable **names** only — values redacted |
-| `tok err <cmd> [args]` | Run command, return stderr only |
-| `tok proxy <cmd> [args]` | Run raw, no filter, track only |
-| `tok summary <cmd> [args]` | Run command, generic dedup + summary |
+| `tok pulumi / terraform <args>` | Infra plans become a change summary |
+| `tok curl / wget <args>` | Large bodies compressed |
+| `tok env` | Variable names only, values hidden |
+| `tok err <cmd> [args]` | Run a command, return only its errors |
+| `tok proxy <cmd> [args]` | Run without filtering, record the run only |
+| `tok summary <cmd> [args]` | Run any command, generic summary |
 
-### Global flags
+### Flags
 
-| Flag | Behaviour |
+| Flag | Effect |
 |---|---|
 | `-u`, `--ultra-compact` | Maximum compression |
-| `-v`, `-vv`, `-vvv` | Verbose / very verbose / debug |
-| `--no-track` | Skip the local write for this invocation |
-| `--no-cache` | Bypass the output cache; always emit full output |
+| `-v`, `-vv`, `-vvv` | Verbose, very verbose, debug |
+| `--no-track` | Do not record this run |
+| `--no-cache` | Bypass the output cache |
 | `--version` | Print version and exit |
 | `--help` | Print help and exit |
 
-### Analytics
+### Reports
 
-| Command | Behaviour |
+| Command | What it shows |
 |---|---|
-| `tok gain` | Filter savings summary |
-| `tok gain --graph` / `--history` / `--daily` | Variants |
+| `tok gain` | How many tokens tok saved |
+| `tok gain --graph / --history / --daily` | Chart, history, and per-day views |
 | `tok gain --format json` | Export as JSON |
-| `tok stats` | AI consumption summary |
-| `tok stats --model NAME` | Filter by model name (partial match) |
-| `tok stats --daily` / `--weekly` / `--monthly` / `--graph` | Variants |
-| `tok stats --export json` / `--export csv` | Exports |
-| `tok econ` | Combined: cost + savings + weighted CPT + ROI |
-| `tok econ --daily` / `--weekly` / `--monthly` | Per-period breakdown |
-| `tok econ --export json` / `--export csv` | Exports |
-| `tok cache` | Output-cache stats (unchanged-detection) |
-| `tok cache --list` / `--clear` | List most-reused commands / empty the cache |
-| `tok session` | Adoption % per AI conversation session |
-| `tok discover` | Find unoptimized commands + savings potential |
-| `tok doctor` | Full self-diagnosis (env, PATH, hooks, DB, live probe) |
-| `tok verify` | Hook installation status per AI tool |
+| `tok stats` | AI token consumption |
+| `tok stats --model NAME` | Filter by model name |
+| `tok stats --daily / --weekly / --monthly / --graph` | Period views |
+| `tok stats --export json / csv` | Export |
+| `tok econ` | Cost, savings, and return on spend |
+| `tok econ --daily / --weekly / --monthly` | Period breakdown |
+| `tok cache` | Output cache stats |
+| `tok cache --list / --clear` | List reused commands, or empty the cache |
+| `tok session` | Adoption per conversation |
+| `tok discover` | Commands that could be optimized |
+| `tok doctor` | Full self-check |
+| `tok verify` | Hook status per tool |
 
-### Usage ingestion
+### Usage data
 
-| Command | Behaviour |
+These feed `tok stats` and `tok econ`.
+
+| Command | What it does |
 |---|---|
-| `tok usage ingest --claude-code [--since YYYY-MM-DD]` | Parse Claude Code JSONL logs |
-| `tok usage ingest --ccusage [--since YYYY-MM-DD]` | Use `ccusage` CLI (binary, then `npx` fallback) |
-| `tok usage log --model NAME --input N --output N [--cache-write N] [--cache-read N] [--cost USD]` | Manual entry |
-| `tok usage models` | List all models seen in the local store |
+| `tok usage ingest --claude-code [--since DATE]` | Read token usage from Claude Code logs |
+| `tok usage ingest --ccusage [--since DATE]` | Read usage from the ccusage tool |
+| `tok usage log --model NAME --input N --output N [...]` | Add one usage row by hand |
+| `tok usage models` | List models seen in the local store |
 
-### Setup & maintenance
+### Setup and maintenance
 
-| Command | Behaviour |
+| Command | What it does |
 |---|---|
-| `tok init` | Auto-detect all AI tools, install hooks |
-| `tok init --claude` / `--cursor` / `--copilot` / `--gemini` / `--windsurf` / `--cline` | Install for one specific tool |
-| `tok init --uninstall` | Remove all hooks cleanly |
-| `tok init --show` | Print hook status |
-| `tok version` | Version + local row counts |
-
----
-
-## Privacy
-
-**tok is fully local. It makes no network calls and sends no telemetry — there is no server, account, or device id.** Everything lives in plain files under **`~/.tok/`** (`C:\Users\<you>\.tok` on Windows): `commands.ndjson`, `ai_usage.ndjson`, `meta.json`, `cache.json`, and `config.json`.
-
-> **Why `~/.tok` and not `%APPDATA%`?** Store/MSIX-packaged apps like Claude Desktop run sandboxed, and Windows silently redirects `%APPDATA%`/`%LOCALAPPDATA%` into the app's private folder. Storing under your profile root keeps one shared directory for both the hook (run by Claude) and your terminal — otherwise `tok gain` would look empty even while tok is saving. Override the location with `TOK_HOME` if needed.
-
-What tok stores locally:
-
-- `cmd_type` — category only (`git`, `npm`, `tsc`), never the full command
-- `input_bytes`, `out_bytes`, `saved_bytes`, `savings_pct`, `exec_ms`
-- AI model names (`claude-opus-4-5`, etc.) and token counts, when you run `tok usage ingest`
-- `cost_usd` from ccusage when available
-
-What tok **never** stores:
-
-- Full command strings or arguments
-- Command output or filtered output content
-- File names, directory names, project names
-- Usernames, email addresses, real names
-- IP addresses, hostnames, machine names
-- Source code, secrets, API keys, environment variables
-
-The output cache stores filtered outputs (to detect unchanged repeats), also locally; clear it any time with `tok cache --clear`.
-
----
+| `tok init` | Detect all tools and set up hooks |
+| `tok init --claude / --cursor / --copilot / --gemini / --windsurf / --cline / --antigravity` | Set up one tool |
+| `tok init --uninstall` | Remove all hooks |
+| `tok init --show` | Show hook status |
+| `tok version` | Version and local row counts |
 
 ## Configuration
 
-Config file:
+tok keeps its data and settings in `~/.tok` (`C:\Users\<you>\.tok` on Windows). The config file `~/.tok/config.json` is created with sensible defaults on first run. You can adjust compression limits, token pricing, which read-only commands to cache, and which folders to treat as noise. A missing or invalid config falls back to defaults, so tok never breaks on a bad file.
 
-- All platforms: `~/.tok/config.json` (`C:\Users\<you>\.tok\config.json` on Windows)
-
-The file is created with defaults on first run. Missing or malformed configs are merged silently with defaults — tok never crashes on a bad config.
-
-```json
-{
-  "version": "0.4.0",
-  "tokenPricePer1k": 0.015,
-  "tee": { "enabled": true, "mode": "failures" },
-  "filters": {
-    "maxOutputLines": 150,
-    "ultraCompact": false,
-    "git":  { "diffMaxLines": 100 },
-    "cat":  { "maxLines": 200, "defaultLevel": "minimal" },
-    "grep": { "maxMatches": 100 },
-    "ls":   { "maxDepth": 4 }
-  },
-  "cache": {
-    "enabled": true,
-    "maxEntries": 5000,
-    "maxOutputBytes": 65536,
-    "commands": ["git status", "git diff", "git log", "ls", "cat", "grep", "find", "json", "docker ps"]
-  },
-  "excludeCommands": ["ssh", "vim", "nano", "less", "psql", "mysql"],
-  "noiseDirectories": [
-    "node_modules", ".git", "dist", "build", ".next", "target",
-    "__pycache__", ".cache", "coverage", ".turbo", "vendor",
-    ".svn", ".hg", "out", "tmp", ".tmp"
-  ],
-  "claudeCodeDataDir": "~/.claude/projects",
-  "modelPricing": {
-    "claude-opus-4-5":   { "inputPer1k": 0.015,   "outputPer1k": 0.075,   "cacheWritePer1k": 0.01875,  "cacheReadPer1k": 0.0015 },
-    "claude-sonnet-4-5": { "inputPer1k": 0.003,   "outputPer1k": 0.015,   "cacheWritePer1k": 0.00375,  "cacheReadPer1k": 0.0003 },
-    "claude-haiku-4-5":  { "inputPer1k": 0.00025, "outputPer1k": 0.00125, "cacheWritePer1k": 0.0003,   "cacheReadPer1k": 0.00003 }
-  }
-}
-```
-
-### Environment variable overrides
+Common environment variables:
 
 | Variable | Effect |
 |---|---|
-| `TOK_PRICE` | Override `tokenPricePer1k` |
-| `TOK_NO_TRACK=1` | Skip the local write for this invocation |
+| `TOK_HOME` | Data and config directory (default `~/.tok`) |
+| `TOK_NO_TRACK=1` | Do not record this run |
 | `TOK_NO_CACHE=1` | Bypass the output cache |
-| `TOK_ULTRA_COMPACT=1` | Force ultra-compact mode |
-| `TOK_HOME` | Override the data/config directory (default `~/.tok`) |
+| `TOK_ULTRA_COMPACT=1` | Force maximum compression |
+| `TOK_PRICE` | Override the token price used in reports |
 
----
+## Privacy
 
-## Analytics
+tok runs entirely on your machine. It makes no network calls and has no account, server, or telemetry. All data stays in plain files under `~/.tok`.
 
-### `tok gain` — filter savings
+tok records only:
 
-Reads the local command log (`commands.ndjson`). Works offline. Shows total bytes/tokens saved over time, top filtered commands, and any commands that aren't being optimized.
+- the command category (`git`, `npm`, `tsc`), never the full command
+- byte and token counts, savings percentage, and run time
+- AI model names and token counts, and only if you run `tok usage ingest`
 
-### `tok stats` — AI token consumption
+tok never records command text or arguments, command output, file or folder names, usernames, or anything from your source code.
 
-Reads `tok_ai_usage`. Shows input/output/cache tokens by period, models used, cache hit rate, and an estimated cache savings figure.
+## Uninstall
 
-### `tok econ` — combined economics
+You can remove tok completely from any OS. Remove the hooks first, then delete the data and the binary.
 
-Calculates a weighted input cost-per-token (CPT) by reverse-engineering Anthropic's pricing ratios:
+**1. Remove all hooks:**
 
-```
-weightedUnits = input + 5×output + 1.25×cacheWrite + 0.1×cacheRead
-inputCpt      = totalCost / weightedUnits
-savedUsd      = savedTokens × inputCpt
-roi           = savedUsd / totalCost × 100
-```
-
-When `cost_usd = 0` for the period (no ccusage data ingested), tok falls back to the configured flat rate and marks the figure `(estimated — run tok usage ingest --ccusage for actuals)`.
-
-`tok econ` also shows: context window health (avg session size, sessions over 100K), and a model-cost comparison estimating what the same workload would cost on Sonnet vs Haiku.
-
----
-
-## AI usage ingestion
-
-tok needs raw AI usage data to compute `tok stats` and `tok econ`. There are three sources:
-
-1. **Claude Code logs** — `tok usage ingest --claude-code`
-   Walks `~/.claude/projects/<hash>/*.jsonl` and parses every assistant message that includes a `usage` block.
-
-2. **ccusage CLI** — `tok usage ingest --ccusage`
-   Calls `ccusage --json --since <date>` (falls back to `npx --yes ccusage`). Each day × model becomes one usage row including the `cost_usd` field.
-
-3. **Manual log** — `tok usage log --model NAME --input N --output N [...]`
-   Insert one row directly. Useful for non-Claude models or quick experiments.
-
----
-
-## Troubleshooting
-
-**`tok verify` shows hooks installed but no activity in 7 days**
-Restart the AI tool — hooks are loaded at startup. If still no activity, run `tok init --show` and confirm the hook file path matches what the AI tool reads.
-
-**`tok stats` shows "No AI usage data yet"**
-Run `tok usage ingest --claude-code` (or `--ccusage`). Usage data is backfilled from your Claude Code logs — tok doesn't capture it live, so ingest once to populate `tok stats` and `tok econ`.
-
-**Builds in CI suddenly fail**
-tok always preserves the real exit code. If a CI step started failing right after install, run with `-vv` (or set `TOK_NO_TRACK=1` to bypass) and check the raw output. File a bug if the filter dropped meaningful error context — tok's TEE system should write the full output to `~/.tok/tee/...` whenever a failure has a short filtered output.
-
-**Something misbehaving?**
-Run `tok doctor` — it checks the tok runtime and Bash, PATH collisions, the data store, config, and the hook logic. Detailed errors are logged to `~/.tok/errors.log`.
-
-**I want to remove tok entirely**
-```
-tok init --uninstall            # remove every hook cleanly
-rm -rf ~/.tok                   # all local data + config
+```bash
+tok init --uninstall
 ```
 
-On Windows that's `rmdir /s "%USERPROFILE%\.tok"`. Then delete the binary at `~/.local/bin/tok` (`tok.exe` on Windows) or the cloned folder.
+**2. Delete the local data and config.**
+
+Linux and macOS:
+
+```bash
+rm -rf ~/.tok
+```
+
+Windows (PowerShell):
+
+```powershell
+Remove-Item -Recurse -Force "$HOME\.tok"
+```
+
+**3. Delete the binary.**
+
+Linux and macOS:
+
+```bash
+rm ~/.local/bin/tok
+```
+
+Windows (PowerShell):
+
+```powershell
+Remove-Item "$HOME\.local\bin\tok.exe"
+```
+
+If you added `~/.local/bin` to your PATH only for tok, you can remove that entry as well. On Windows the PATH is under System Properties, Environment Variables.

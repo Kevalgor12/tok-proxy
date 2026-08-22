@@ -561,8 +561,8 @@ ANALYTICS COMMANDS
   hook-test               Pipe fake payloads through the installed hook + assert protocol
 
 INTERNAL (invoked by the AI tool's hook; not for direct use)
-  hook claude             Read a PreToolUse payload on stdin, print the rewrite JSON
-  hook cursor|antigravity|windsurf   deny-and-retry guard for that IDE (--enforce only)
+  hook claude | antigravity   Transparent rewrite hook: read payload on stdin, print JSON
+  hook cursor | windsurf      Deny-and-retry guard for that IDE (--enforce only)
   rewrite "<cmd>"         Print rewritten command, exit 0/1/2/3 per registry
 
 USAGE INGESTION
@@ -573,7 +573,7 @@ USAGE INGESTION
 
 MAINTENANCE
   init [--claude|--cursor|--copilot|--gemini|--windsurf|--cline|--antigravity]
-  init [--cursor|--antigravity|--windsurf] --enforce   deny-and-retry guard (experimental)
+  init [--cursor|--windsurf] --enforce   deny-and-retry guard (experimental)
   init --uninstall
   init --show
   version
