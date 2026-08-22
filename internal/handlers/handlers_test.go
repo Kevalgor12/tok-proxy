@@ -22,6 +22,14 @@ func TestFormatGitStatus(t *testing.T) {
 			t.Errorf("porcelain %q missing %q", porc, want)
 		}
 	}
+	// Mixed porcelain: modified + deleted + untracked together (`git status --short`). This
+	// previously reported only "1 untracked" and hid the changed files.
+	mixed := formatGitStatus(" M a.go\n?? new.txt\n D old.go\n", false)
+	for _, want := range []string{"1 modified", "1 deleted", "1 untracked"} {
+		if !strings.Contains(mixed, want) {
+			t.Errorf("mixed porcelain %q missing %q", mixed, want)
+		}
+	}
 	if s := formatGitStatus("nothing to commit, working tree clean\n", false); s != "nothing to commit, working tree clean" {
 		t.Errorf("clean = %q", s)
 	}

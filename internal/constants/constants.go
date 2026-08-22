@@ -3,7 +3,7 @@
 package constants
 
 // Version is the tok release line. The Go rewrite starts the 0.4.x series.
-const Version = "0.4.1"
+const Version = "0.4.2"
 
 // Exit codes for `tok rewrite` - the contract the shell hook depends on. Kept identical
 // to the Node version so a hook installed before the migration keeps working.

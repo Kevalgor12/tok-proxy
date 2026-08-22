@@ -61,7 +61,6 @@ var (
 	gitTreeCleanRe    = regexp.MustCompile(`(?i)working tree clean`)
 	gitStatusChangeRe = regexp.MustCompile(`^\s*(modified|new file|deleted|renamed):\s+(.+)`)
 	gitPorcelainRe    = regexp.MustCompile(`^[ MADRCU?][ MADRCU?]\s`)
-	gitUntrackedRe    = regexp.MustCompile(`^\?\?\s+`)
 	gitIndentedRe     = regexp.MustCompile(`^\s{2,}\S`)
 )
 
@@ -78,21 +77,20 @@ func formatGitStatus(raw string, ultra bool) string {
 	for _, line := range strings.Split(clean, "\n") {
 		if m := gitStatusChangeRe.FindStringSubmatch(line); m != nil {
 			counts[m[1]]++
-			continue
-		}
-		if gitUntrackedRe.MatchString(line) {
-			counts["untracked"]++
 		}
 	}
 
-	// Porcelain fallback (M/A/D/R/?? codes) when the long form matched nothing.
+	// Porcelain fallback (M/A/D/R/?? codes) when the long form matched no change lines. Gated on
+	// the long-form change counts only - NOT untracked - so mixed `git status --short` output
+	// (e.g. " M file" plus "?? file") still gets its modified/deleted lines counted here rather
+	// than being masked by the untracked count. The block itself counts the ?? untracked lines.
 	var porcelain []string
 	for _, l := range strings.Split(clean, "\n") {
 		if gitPorcelainRe.MatchString(l) {
 			porcelain = append(porcelain, l)
 		}
 	}
-	if len(porcelain) > 0 && counts["modified"]+counts["new file"]+counts["deleted"]+counts["untracked"] == 0 {
+	if len(porcelain) > 0 && counts["modified"]+counts["new file"]+counts["deleted"]+counts["renamed"] == 0 {
 		for _, line := range porcelain {
 			code := line[:2]
 			switch {

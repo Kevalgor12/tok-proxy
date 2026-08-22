@@ -135,7 +135,28 @@ func main() {
 	// Hot path: the Node-free PreToolUse hook Claude Code fires on every Bash tool call.
 	// Read the tool-call JSON on stdin, print the rewrite decision - no config, no DB.
 	if rest[0] == "hook" {
+		agent := ""
+		if len(rest) > 1 {
+			agent = rest[1]
+		}
 		payload := readStdin()
+		// Cursor / Antigravity / Windsurf can't rewrite a command, so these are deny-and-retry
+		// guards: block a recognized command and tell the agent to re-run it as tok.
+		switch agent {
+		case "cursor":
+			fmt.Print(hook.BuildCursorHookOutput(payload))
+			os.Exit(0)
+		case "antigravity":
+			fmt.Print(hook.BuildAntigravityHookOutput(payload))
+			os.Exit(0)
+		case "windsurf":
+			if msg, block := hook.BuildWindsurfGuard(payload); block {
+				fmt.Fprintln(os.Stderr, msg)
+				os.Exit(2)
+			}
+			os.Exit(0)
+		}
+		// Claude Code: the transparent rewrite hook.
 		out, ok := hook.BuildClaudeHookOutput(payload)
 		hook.DebugLog(payload, ok) // no-op unless ~/.tok/hook-debug exists
 		if payload != "" && ok {
@@ -380,6 +401,7 @@ func dispatch(db *store.Store, cfg config.Config, flags globalFlags, command str
 			Copilot: hasFlag(cmdArgs, "copilot"), Gemini: hasFlag(cmdArgs, "gemini"),
 			Windsurf: hasFlag(cmdArgs, "windsurf"), Cline: hasFlag(cmdArgs, "cline"),
 			Antigravity: hasFlag(cmdArgs, "antigravity"),
+			Enforce:     hasFlag(cmdArgs, "enforce"),
 			Uninstall:   hasFlag(cmdArgs, "uninstall"), Show: hasFlag(cmdArgs, "show"),
 		}), 0)
 	case "version":
@@ -534,6 +556,7 @@ ANALYTICS COMMANDS
 
 INTERNAL (invoked by the AI tool's hook; not for direct use)
   hook claude             Read a PreToolUse payload on stdin, print the rewrite JSON
+  hook cursor|antigravity|windsurf   deny-and-retry guard for that IDE (--enforce only)
   rewrite "<cmd>"         Print rewritten command, exit 0/1/2/3 per registry
 
 USAGE INGESTION
@@ -544,6 +567,7 @@ USAGE INGESTION
 
 MAINTENANCE
   init [--claude|--cursor|--copilot|--gemini|--windsurf|--cline|--antigravity]
+  init [--cursor|--antigravity|--windsurf] --enforce   deny-and-retry guard (experimental)
   init --uninstall
   init --show
   version

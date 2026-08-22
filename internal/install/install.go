@@ -30,6 +30,9 @@ type InitOptions struct {
 	Antigravity bool
 	Uninstall   bool
 	Show        bool
+	// Enforce opts Cursor into the deny-and-retry guard hook (reliable but the agent bounces
+	// off a blocked command and retries). Without it Cursor gets the safe instruction rule only.
+	Enforce bool
 }
 
 type installResult struct {
@@ -65,7 +68,7 @@ func RunInit(s *store.Store, opts InitOptions) string {
 		results = append(results, installClaudeCode()...)
 	}
 	if all || opts.Cursor {
-		results = append(results, installCursor())
+		results = append(results, installCursor(opts.Enforce))
 	}
 	if all || opts.Copilot {
 		results = append(results, installCopilot())
@@ -74,10 +77,10 @@ func RunInit(s *store.Store, opts InitOptions) string {
 		results = append(results, installGemini())
 	}
 	if all || opts.Windsurf {
-		results = append(results, installWindsurf())
+		results = append(results, installWindsurf(opts.Enforce))
 	}
 	if all || opts.Antigravity {
-		results = append(results, installAntigravity())
+		results = append(results, installAntigravity(opts.Enforce))
 	}
 	if all || opts.Cline {
 		results = append(results, installCline())
@@ -89,13 +92,15 @@ func RunInit(s *store.Store, opts InitOptions) string {
 
 func formatResults(results []installResult) string {
 	var lines []string
-	anyTransparent, anyInstruction := false, false
+	anyTransparent, anyInstruction, anyEnforce := false, false, false
 	for _, r := range results {
-		if r.mode == "transparent" {
+		switch r.mode {
+		case "transparent":
 			anyTransparent = true
-		}
-		if r.mode == "instruction" {
+		case "instruction":
 			anyInstruction = true
+		case "enforce":
+			anyEnforce = true
 		}
 		tag := "-"
 		switch r.status {
@@ -118,6 +123,8 @@ func formatResults(results []installResult) string {
 			modeTag = " [instruction-mode]"
 		case "transparent":
 			modeTag = " [transparent]"
+		case "enforce":
+			modeTag = " [enforce]"
 		}
 		lines = append(lines, "  "+util.Pad(tag, 4, false)+" "+util.Pad(r.tool, 22, false)+" "+r.status+modeTag+note)
 	}
@@ -131,6 +138,11 @@ func formatResults(results []installResult) string {
 		lines = append(lines,
 			"Instruction mode: a tok rule is written into the tool's global-rules file.",
 			"  Compression depends on the model voluntarily prefixing commands with tok.")
+	}
+	if anyEnforce {
+		lines = append(lines,
+			"Enforce mode (EXPERIMENTAL): the hook blocks a recognized command and tells the agent to re-run it as tok.",
+			"  Reliable savings, but the agent hits one blocked call per command. Restart the tool; validate it actually retries.")
 	}
 	lines = append(lines, "  → Then run: tok verify  for a full status report.")
 	return strings.Join(lines, "\n")
@@ -239,23 +251,69 @@ func countOurs(arr []any, isOurs func(string) bool) int {
 // tok-rewrite.sh PreToolUse hook, but current Cursor hooks (beforeShellExecution) can only
 // allow/deny/ask - they cannot rewrite a command - so that hook never actually took effect.
 // We remove it and drop an instruction rule Cursor reads from ~/.cursor/rules/tok.mdc instead.
-func installCursor() installResult {
+func installCursor(enforce bool) installResult {
 	cursorDir := filepath.Join(home(), ".cursor")
 	if !util.FileExists(cursorDir) {
 		return installResult{tool: "Cursor", status: "not-detected"}
 	}
-	removeLegacyCursorHook(cursorDir)
-	rulesDir := filepath.Join(cursorDir, "rules")
-	util.EnsureDir(rulesDir)
-	ok := util.WriteFileSafe(filepath.Join(rulesDir, "tok.mdc"), cursorRuleFile())
-	return installResult{tool: "Cursor", status: okStatus(ok), detail: "v" + constants.Version, mode: "instruction"}
-}
-
-// removeLegacyCursorHook strips the old, non-functional tok-rewrite.sh hook and its hooks.json
-// registration left by earlier tok versions.
-func removeLegacyCursorHook(cursorDir string) {
+	// Clear the ancient, non-functional tok-rewrite.sh script + its legacy preToolUse entry, and
+	// always drop the safe instruction rule as a baseline.
 	tryUnlink(filepath.Join(cursorDir, "hooks", "tok-rewrite.sh"))
 	removeFromCursor(filepath.Join(cursorDir, "hooks.json"))
+	rulesDir := filepath.Join(cursorDir, "rules")
+	util.EnsureDir(rulesDir)
+	util.WriteFileSafe(filepath.Join(rulesDir, "tok.mdc"), cursorRuleFile())
+
+	hooksPath := filepath.Join(cursorDir, "hooks.json")
+	if !enforce {
+		removeCursorGuard(hooksPath) // clear any guard left by a prior --enforce run
+		return installResult{tool: "Cursor", status: "installed", detail: "v" + constants.Version + ", rule", mode: "instruction"}
+	}
+	registerCursorGuard(hooksPath, hook.ResolveTokInvocation()+" hook cursor")
+	return installResult{tool: "Cursor", status: "installed", detail: "v" + constants.Version + ", enforce+rule", mode: "enforce"}
+}
+
+// registerCursorGuard adds tok's beforeShellExecution deny-and-retry hook to Cursor's hooks.json
+// (schema v1), replacing any prior tok guard and preserving the user's own hooks.
+func registerCursorGuard(hooksPath, hookCmd string) {
+	cfg := readJSONMap(hooksPath)
+	if _, ok := cfg["version"]; !ok {
+		cfg["version"] = 1
+	}
+	hooks := childMap(cfg, "hooks")
+	arr, _ := hooks["beforeShellExecution"].([]any)
+	arr = append(rejectEntries(arr, isTokCursorGuard), map[string]any{"command": hookCmd})
+	hooks["beforeShellExecution"] = arr
+	cfg["hooks"] = hooks
+	writeJSONMap(hooksPath, cfg)
+}
+
+// removeCursorGuard strips tok's beforeShellExecution guard from Cursor's hooks.json.
+func removeCursorGuard(hooksPath string) bool {
+	cfg := readJSONMap(hooksPath)
+	hooks, ok := cfg["hooks"].(map[string]any)
+	if !ok {
+		return false
+	}
+	arr, ok := hooks["beforeShellExecution"].([]any)
+	if !ok {
+		return false
+	}
+	filtered := rejectEntries(arr, isTokCursorGuard)
+	if len(filtered) == len(arr) {
+		return false
+	}
+	if len(filtered) == 0 {
+		delete(hooks, "beforeShellExecution")
+	} else {
+		hooks["beforeShellExecution"] = filtered
+	}
+	writeJSONMap(hooksPath, cfg)
+	return true
+}
+
+func isTokCursorGuard(m map[string]any) bool {
+	return strings.Contains(str(m["command"]), "hook cursor")
 }
 
 func installCopilot() installResult {
@@ -312,30 +370,113 @@ func installGemini() installResult {
 	return installResult{tool: "Gemini CLI", status: okStatus(ok), detail: "v" + constants.Version, mode: "instruction"}
 }
 
-func installWindsurf() installResult {
+// installWindsurf writes tok's instruction rule to Windsurf's real global-rules file, and with
+// enforce also registers the pre_run_command deny-and-retry guard. Windsurf hooks can only
+// allow/block, never rewrite.
+func installWindsurf(enforce bool) installResult {
 	dir := filepath.Join(home(), ".codeium", "windsurf")
 	if !util.FileExists(dir) {
 		return installResult{tool: "Windsurf", status: "not-detected"}
 	}
-	// Windsurf reads global rules from ~/.codeium/windsurf/memories/global_rules.md; the old
-	// tok-awareness.md sitting beside it was never read, so drop it.
+	// The old tok-awareness.md sitting here was never read by Windsurf; drop it.
 	tryUnlink(filepath.Join(dir, awarenessFilename))
 	util.EnsureDir(filepath.Join(dir, "memories"))
-	status := upsertRulesBlock(filepath.Join(dir, "memories", "global_rules.md"))
-	return installResult{tool: "Windsurf", status: status, detail: "v" + constants.Version, mode: "instruction"}
+	upsertRulesBlock(filepath.Join(dir, "memories", "global_rules.md"))
+
+	hooksPath := filepath.Join(dir, "hooks.json")
+	if !enforce {
+		removeWindsurfGuard(hooksPath)
+		return installResult{tool: "Windsurf", status: "installed", detail: "v" + constants.Version + ", rule", mode: "instruction"}
+	}
+	registerWindsurfGuard(hooksPath, hook.ResolveTokInvocation()+" hook windsurf")
+	return installResult{tool: "Windsurf", status: "installed", detail: "v" + constants.Version + ", enforce+rule", mode: "enforce"}
 }
 
-// installAntigravity writes tok's rule into Antigravity's global cross-tool rules file. Its
-// hooks can only allow/deny/ask (never rewrite a command), so instruction mode is the only
-// option; ~/.gemini/AGENTS.md is the file Antigravity reads for global rules.
-func installAntigravity() installResult {
+// installAntigravity writes tok's rule into Antigravity's global cross-tool rules file
+// (~/.gemini/AGENTS.md), and with enforce also registers the PreToolUse deny-and-retry guard in
+// ~/.gemini/config/hooks.json. Antigravity hooks can only allow/deny/ask, never rewrite.
+func installAntigravity(enforce bool) installResult {
 	geminiDir := filepath.Join(home(), ".gemini")
 	if !util.FileExists(filepath.Join(home(), ".antigravity")) && !util.FileExists(geminiDir) && !which("antigravity") {
 		return installResult{tool: "Antigravity", status: "not-detected"}
 	}
 	util.EnsureDir(geminiDir)
-	status := upsertRulesBlock(filepath.Join(geminiDir, "AGENTS.md"))
-	return installResult{tool: "Antigravity", status: status, detail: "v" + constants.Version, mode: "instruction"}
+	upsertRulesBlock(filepath.Join(geminiDir, "AGENTS.md"))
+
+	hooksPath := filepath.Join(geminiDir, "config", "hooks.json")
+	if !enforce {
+		removeAntigravityGuard(hooksPath)
+		return installResult{tool: "Antigravity", status: "installed", detail: "v" + constants.Version + ", rule", mode: "instruction"}
+	}
+	util.EnsureDir(filepath.Join(geminiDir, "config"))
+	registerAntigravityGuard(hooksPath, hook.ResolveTokInvocation()+" hook antigravity")
+	return installResult{tool: "Antigravity", status: "installed", detail: "v" + constants.Version + ", enforce+rule", mode: "enforce"}
+}
+
+// registerAntigravityGuard sets tok's named PreToolUse guard in Antigravity's hooks.json,
+// preserving any other named hooks.
+func registerAntigravityGuard(hooksPath, hookCmd string) {
+	cfg := readJSONMap(hooksPath)
+	cfg["tok"] = map[string]any{
+		"PreToolUse": []any{
+			map[string]any{
+				"matcher": "run_command",
+				"hooks": []any{
+					map[string]any{"type": "command", "command": hookCmd, "timeout": 30},
+				},
+			},
+		},
+	}
+	writeJSONMap(hooksPath, cfg)
+}
+
+func removeAntigravityGuard(hooksPath string) bool {
+	cfg := readJSONMap(hooksPath)
+	if _, ok := cfg["tok"]; !ok {
+		return false
+	}
+	delete(cfg, "tok")
+	writeJSONMap(hooksPath, cfg)
+	return true
+}
+
+// registerWindsurfGuard adds tok's pre_run_command guard to Windsurf's hooks.json, replacing any
+// prior tok guard and preserving the user's own hooks.
+func registerWindsurfGuard(hooksPath, hookCmd string) {
+	cfg := readJSONMap(hooksPath)
+	hooks := childMap(cfg, "hooks")
+	arr, _ := hooks["pre_run_command"].([]any)
+	arr = append(rejectEntries(arr, isTokWindsurfGuard), map[string]any{"command": hookCmd, "powershell": hookCmd})
+	hooks["pre_run_command"] = arr
+	cfg["hooks"] = hooks
+	writeJSONMap(hooksPath, cfg)
+}
+
+func removeWindsurfGuard(hooksPath string) bool {
+	cfg := readJSONMap(hooksPath)
+	hooks, ok := cfg["hooks"].(map[string]any)
+	if !ok {
+		return false
+	}
+	arr, ok := hooks["pre_run_command"].([]any)
+	if !ok {
+		return false
+	}
+	filtered := rejectEntries(arr, isTokWindsurfGuard)
+	if len(filtered) == len(arr) {
+		return false
+	}
+	if len(filtered) == 0 {
+		delete(hooks, "pre_run_command")
+	} else {
+		hooks["pre_run_command"] = filtered
+	}
+	writeJSONMap(hooksPath, cfg)
+	return true
+}
+
+func isTokWindsurfGuard(m map[string]any) bool {
+	return strings.Contains(str(m["command"]), "hook windsurf")
 }
 
 func installCline() installResult {
@@ -367,14 +508,18 @@ func uninstallAll() string {
 	add(cursorScript, tryUnlink(cursorScript))
 	cursorCfg := filepath.Join(home(), ".cursor", "hooks.json")
 	add(cursorCfg+" (tok entries)", removeFromCursor(cursorCfg))
+	add(cursorCfg+" (guard)", removeCursorGuard(cursorCfg))
 	cursorRule := filepath.Join(home(), ".cursor", "rules", "tok.mdc")
 	add(cursorRule, tryUnlink(cursorRule))
 
-	// Instruction-mode rule blocks in the IDEs' real global-rules files.
+	// Instruction-mode rule blocks in the IDEs' real global-rules files, plus any deny-and-retry
+	// guard hooks from --enforce.
 	antigravityRules := filepath.Join(home(), ".gemini", "AGENTS.md")
 	add(antigravityRules+" (tok rule)", removeRulesBlock(antigravityRules))
+	add(filepath.Join(home(), ".gemini", "config", "hooks.json")+" (guard)", removeAntigravityGuard(filepath.Join(home(), ".gemini", "config", "hooks.json")))
 	windsurfRules := filepath.Join(home(), ".codeium", "windsurf", "memories", "global_rules.md")
 	add(windsurfRules+" (tok rule)", removeRulesBlock(windsurfRules))
+	add(filepath.Join(home(), ".codeium", "windsurf", "hooks.json")+" (guard)", removeWindsurfGuard(filepath.Join(home(), ".codeium", "windsurf", "hooks.json")))
 
 	awareness := [][2]string{
 		{"VS Code (Linux)", filepath.Join(home(), ".config", "Code", "User", awarenessFilename)},
