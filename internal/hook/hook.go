@@ -52,6 +52,46 @@ func DebugLog(payload string, rewrote bool) {
 	fmt.Fprintf(f, "%s tool=%s rewrote=%v prog=%s\n", util.NowIso(), tool, rewrote, prog)
 }
 
+// DebugLogAgent is the guard/overwrite-hook counterpart to DebugLog for the non-Claude IDEs
+// (cursor, antigravity, windsurf), whose payloads carry the command under different keys. It
+// records the agent name, the leading program token, and whether tok acted - never the full
+// command. Gated on the same ~/.tok/hook-debug flag, so it is a no-op in normal use.
+func DebugLogAgent(agent, payload string, acted bool) {
+	dir := util.DataDir()
+	if !util.FileExists(filepath.Join(dir, "hook-debug")) {
+		return
+	}
+	var obj struct {
+		Command  string `json:"command"` // Cursor
+		ToolInfo struct {
+			CommandLine string `json:"command_line"`
+		} `json:"tool_info"` // Windsurf
+		ToolCall struct {
+			Args struct {
+				CommandLine string `json:"CommandLine"`
+			} `json:"args"`
+		} `json:"toolCall"` // Antigravity
+	}
+	_ = json.Unmarshal([]byte(payload), &obj)
+	cmd := obj.Command
+	if cmd == "" {
+		cmd = obj.ToolInfo.CommandLine
+	}
+	if cmd == "" {
+		cmd = obj.ToolCall.Args.CommandLine
+	}
+	prog := strings.TrimSpace(cmd)
+	if i := strings.IndexAny(prog, " \t\n"); i >= 0 {
+		prog = prog[:i]
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "hook.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s tool=%s acted=%v prog=%s\n", util.NowIso(), agent, acted, prog)
+}
+
 // BuildClaudeHookOutput returns the JSON to print for a PreToolUse payload, and whether
 // there is anything to print (false = pass the command through untouched).
 func BuildClaudeHookOutput(payload string) (string, bool) {

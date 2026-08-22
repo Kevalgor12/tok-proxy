@@ -6,20 +6,22 @@ import (
 )
 
 func TestBuildAntigravityHookOutput(t *testing.T) {
+	// Recognized command -> transparent rewrite via allow + overwrite (no deny/bounce).
 	out := BuildAntigravityHookOutput(`{"toolCall":{"name":"run_command","args":{"CommandLine":"git status"}}}`)
-	if !strings.Contains(out, `"decision":"deny"`) || !strings.Contains(out, "tok git status") {
+	if !strings.Contains(out, `"decision":"allow"`) || !strings.Contains(out, `"overwrite"`) || !strings.Contains(out, `"CommandLine":"tok git status"`) {
 		t.Errorf("git status = %q", out)
 	}
-	if out := BuildAntigravityHookOutput(`{"toolCall":{"args":{"CommandLine":"cd api && npm ci"}}}`); !strings.Contains(out, "cd api && tok npm ci") {
+	if out := BuildAntigravityHookOutput(`{"toolCall":{"args":{"CommandLine":"cd api && npm ci"}}}`); !strings.Contains(out, `"CommandLine":"cd api && tok npm ci"`) {
 		t.Errorf("compound = %q", out)
 	}
+	// Anything tok doesn't rewrite -> {} no-op, leaving Antigravity's normal auto-run decision alone.
 	for _, cmd := range []string{"cd /tmp", "tok git status", "git status | grep x"} {
 		p := `{"toolCall":{"args":{"CommandLine":"` + cmd + `"}}}`
-		if got := BuildAntigravityHookOutput(p); got != "" {
-			t.Errorf("expected no intervention for %q, got %q", cmd, got)
+		if got := BuildAntigravityHookOutput(p); got != "{}" {
+			t.Errorf("expected {} no-op for %q, got %q", cmd, got)
 		}
 	}
-	if got := BuildAntigravityHookOutput("not json"); got != "" {
+	if got := BuildAntigravityHookOutput("not json"); got != "{}" {
 		t.Errorf("malformed = %q", got)
 	}
 }

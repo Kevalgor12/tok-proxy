@@ -144,13 +144,19 @@ func main() {
 		// guards: block a recognized command and tell the agent to re-run it as tok.
 		switch agent {
 		case "cursor":
-			fmt.Print(hook.BuildCursorHookOutput(payload))
+			out := hook.BuildCursorHookOutput(payload)
+			hook.DebugLogAgent("cursor", payload, !strings.Contains(out, `"allow"`))
+			fmt.Print(out)
 			os.Exit(0)
 		case "antigravity":
-			fmt.Print(hook.BuildAntigravityHookOutput(payload))
+			out := hook.BuildAntigravityHookOutput(payload)
+			hook.DebugLogAgent("antigravity", payload, out != "{}")
+			fmt.Print(out)
 			os.Exit(0)
 		case "windsurf":
-			if msg, block := hook.BuildWindsurfGuard(payload); block {
+			msg, block := hook.BuildWindsurfGuard(payload)
+			hook.DebugLogAgent("windsurf", payload, block)
+			if block {
 				fmt.Fprintln(os.Stderr, msg)
 				os.Exit(2)
 			}

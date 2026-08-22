@@ -1,7 +1,8 @@
-// Package install wires tok into AI coding tools. Claude Code and Cursor get a transparent
-// PreToolUse hook that rewrites Bash commands; tools whose hooks cannot rewrite a command
-// (Copilot, Gemini, Windsurf, Antigravity, Cline) instead get a tok rule written into the
-// global-rules file they actually read, asking the agent to prefix commands with tok.
+// Package install wires tok into AI coding tools. Claude Code and Antigravity get a transparent
+// PreToolUse hook that rewrites the command in place (Antigravity via its PreToolUse "overwrite");
+// tools whose hooks can only allow/deny (Cursor, Windsurf) get a tok instruction rule by default
+// plus an optional --enforce deny-and-retry guard; tools with no usable hook (Copilot, Gemini,
+// Cline) get a tok rule written into the global-rules file they actually read.
 package install
 
 import (
@@ -80,7 +81,7 @@ func RunInit(s *store.Store, opts InitOptions) string {
 		results = append(results, installWindsurf(opts.Enforce))
 	}
 	if all || opts.Antigravity {
-		results = append(results, installAntigravity(opts.Enforce))
+		results = append(results, installAntigravity())
 	}
 	if all || opts.Cline {
 		results = append(results, installCline())
@@ -392,30 +393,26 @@ func installWindsurf(enforce bool) installResult {
 	return installResult{tool: "Windsurf", status: "installed", detail: "v" + constants.Version + ", enforce+rule", mode: "enforce"}
 }
 
-// installAntigravity writes tok's rule into Antigravity's global cross-tool rules file
-// (~/.gemini/AGENTS.md), and with enforce also registers the PreToolUse deny-and-retry guard in
-// ~/.gemini/config/hooks.json. Antigravity hooks can only allow/deny/ask, never rewrite.
-func installAntigravity(enforce bool) installResult {
+// installAntigravity registers tok's transparent PreToolUse hook in Antigravity's global
+// customization config (~/.gemini/config/hooks.json). Antigravity's PreToolUse "overwrite" field
+// rewrites the command in place, so - unlike Cursor/Windsurf - this is fully transparent, like
+// Claude Code, with no deny-and-retry. Verified against this build's bundled hooks spec
+// (~/.gemini/antigravity-ide/builtin/skills/agy-customizations/docs/hooks.md). The old instruction
+// rule in AGENTS.md is now redundant and removed.
+func installAntigravity() installResult {
 	geminiDir := filepath.Join(home(), ".gemini")
-	if !util.FileExists(filepath.Join(home(), ".antigravity")) && !util.FileExists(geminiDir) && !which("antigravity") {
+	if !util.FileExists(filepath.Join(home(), ".antigravity")) && !util.FileExists(filepath.Join(home(), ".antigravity-ide")) && !util.FileExists(geminiDir) && !which("antigravity") {
 		return installResult{tool: "Antigravity", status: "not-detected"}
 	}
-	util.EnsureDir(geminiDir)
-	upsertRulesBlock(filepath.Join(geminiDir, "AGENTS.md"))
-
-	hooksPath := filepath.Join(geminiDir, "config", "hooks.json")
-	if !enforce {
-		removeAntigravityGuard(hooksPath)
-		return installResult{tool: "Antigravity", status: "installed", detail: "v" + constants.Version + ", rule", mode: "instruction"}
-	}
+	removeRulesBlock(filepath.Join(geminiDir, "AGENTS.md"))
 	util.EnsureDir(filepath.Join(geminiDir, "config"))
-	registerAntigravityGuard(hooksPath, hook.ResolveTokInvocation()+" hook antigravity")
-	return installResult{tool: "Antigravity", status: "installed", detail: "v" + constants.Version + ", enforce+rule", mode: "enforce"}
+	registerAntigravityHook(filepath.Join(geminiDir, "config", "hooks.json"), hook.ResolveTokInvocation()+" hook antigravity")
+	return installResult{tool: "Antigravity", status: "installed", detail: "v" + constants.Version + ", transparent hook", mode: "transparent"}
 }
 
-// registerAntigravityGuard sets tok's named PreToolUse guard in Antigravity's hooks.json,
+// registerAntigravityHook sets tok's named PreToolUse hook in Antigravity's hooks.json,
 // preserving any other named hooks.
-func registerAntigravityGuard(hooksPath, hookCmd string) {
+func registerAntigravityHook(hooksPath, hookCmd string) {
 	cfg := readJSONMap(hooksPath)
 	cfg["tok"] = map[string]any{
 		"PreToolUse": []any{
@@ -430,7 +427,7 @@ func registerAntigravityGuard(hooksPath, hookCmd string) {
 	writeJSONMap(hooksPath, cfg)
 }
 
-func removeAntigravityGuard(hooksPath string) bool {
+func removeAntigravityHook(hooksPath string) bool {
 	cfg := readJSONMap(hooksPath)
 	if _, ok := cfg["tok"]; !ok {
 		return false
@@ -512,11 +509,11 @@ func uninstallAll() string {
 	cursorRule := filepath.Join(home(), ".cursor", "rules", "tok.mdc")
 	add(cursorRule, tryUnlink(cursorRule))
 
-	// Instruction-mode rule blocks in the IDEs' real global-rules files, plus any deny-and-retry
-	// guard hooks from --enforce.
+	// Antigravity: transparent PreToolUse hook (plus any legacy instruction rule from older tok).
 	antigravityRules := filepath.Join(home(), ".gemini", "AGENTS.md")
 	add(antigravityRules+" (tok rule)", removeRulesBlock(antigravityRules))
-	add(filepath.Join(home(), ".gemini", "config", "hooks.json")+" (guard)", removeAntigravityGuard(filepath.Join(home(), ".gemini", "config", "hooks.json")))
+	add(filepath.Join(home(), ".gemini", "config", "hooks.json")+" (hook)", removeAntigravityHook(filepath.Join(home(), ".gemini", "config", "hooks.json")))
+	// Windsurf: instruction rule plus any deny-and-retry guard from --enforce.
 	windsurfRules := filepath.Join(home(), ".codeium", "windsurf", "memories", "global_rules.md")
 	add(windsurfRules+" (tok rule)", removeRulesBlock(windsurfRules))
 	add(filepath.Join(home(), ".codeium", "windsurf", "hooks.json")+" (guard)", removeWindsurfGuard(filepath.Join(home(), ".codeium", "windsurf", "hooks.json")))

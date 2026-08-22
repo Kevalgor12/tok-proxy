@@ -55,8 +55,9 @@ func RunVerify(s *store.Store) string {
 	tools = append(tools, instructionStatus("Copilot (VS Code)", vscodeAwarenessPath()))
 	tools = append(tools, instructionStatus("Gemini CLI", filepath.Join(home(), ".gemini", awarenessFilename)))
 	tools = append(tools, instructionStatus("Cline / Roo Code", filepath.Join(home(), ".cline", awarenessFilename)))
-	// Rule-block tools (Antigravity, Windsurf): the tok rule lives inside a shared rules file.
-	tools = append(tools, ruleStatus("Antigravity", filepath.Join(home(), ".gemini", "AGENTS.md")))
+	// Antigravity - transparent (PreToolUse "overwrite" hook in the global customization config).
+	tools = append(tools, antigravityStatus(filepath.Join(home(), ".gemini", "config", "hooks.json")))
+	// Windsurf - instruction rule inside its shared global-rules file.
 	tools = append(tools, ruleStatus("Windsurf", filepath.Join(home(), ".codeium", "windsurf", "memories", "global_rules.md")))
 
 	lines := []string{"Hook status:"}
@@ -138,12 +139,27 @@ func instructionStatus(name, mdPath string) toolStatus {
 }
 
 // ruleStatus reports whether tok's managed rule block is present in a shared rules file
-// (Antigravity, Windsurf) - the file itself may exist holding only the user's own rules.
+// (Windsurf) - the file itself may exist holding only the user's own rules.
 func ruleStatus(name, rulesPath string) toolStatus {
 	if c, ok := util.ReadFileIfExists(rulesPath); ok && strings.Contains(c, "<!-- tok:start -->") {
 		return toolStatus{name: name, installed: "yes", hookPath: tildify(rulesPath), mode: "instruction"}
 	}
 	return toolStatus{name: name, installed: "not-detected", mode: "instruction"}
+}
+
+// antigravityStatus reports tok's transparent PreToolUse hook in Antigravity's global
+// customization config (~/.gemini/config/hooks.json), keyed under "tok".
+func antigravityStatus(hooksPath string) toolStatus {
+	if c, ok := util.ReadFileIfExists(hooksPath); ok && strings.Contains(c, "hook antigravity") {
+		return toolStatus{name: "Antigravity", installed: "yes", hookPath: tildify(hooksPath),
+			registered: boolPtr(true), mode: "transparent"}
+	}
+	geminiDir := filepath.Join(home(), ".gemini")
+	if util.FileExists(filepath.Join(home(), ".antigravity")) || util.FileExists(filepath.Join(home(), ".antigravity-ide")) || util.FileExists(geminiDir) {
+		return toolStatus{name: "Antigravity", installed: "no", mode: "transparent",
+			note: "detected but hook not registered - run: tok init --antigravity"}
+	}
+	return toolStatus{name: "Antigravity", installed: "not-detected", mode: "transparent"}
 }
 
 func tildify(p string) string {
