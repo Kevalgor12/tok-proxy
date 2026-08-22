@@ -135,10 +135,11 @@ func main() {
 	// Hot path: the Node-free PreToolUse hook Claude Code fires on every Bash tool call.
 	// Read the tool-call JSON on stdin, print the rewrite decision - no config, no DB.
 	if rest[0] == "hook" {
-		if payload := readStdin(); payload != "" {
-			if out, ok := hook.BuildClaudeHookOutput(payload); ok {
-				fmt.Print(out)
-			}
+		payload := readStdin()
+		out, ok := hook.BuildClaudeHookOutput(payload)
+		hook.DebugLog(payload, ok) // no-op unless ~/.tok/hook-debug exists
+		if payload != "" && ok {
+			fmt.Print(out)
 		}
 		os.Exit(0)
 	}
@@ -378,7 +379,8 @@ func dispatch(db *store.Store, cfg config.Config, flags globalFlags, command str
 			Claude: hasFlag(cmdArgs, "claude"), Cursor: hasFlag(cmdArgs, "cursor"),
 			Copilot: hasFlag(cmdArgs, "copilot"), Gemini: hasFlag(cmdArgs, "gemini"),
 			Windsurf: hasFlag(cmdArgs, "windsurf"), Cline: hasFlag(cmdArgs, "cline"),
-			Uninstall: hasFlag(cmdArgs, "uninstall"), Show: hasFlag(cmdArgs, "show"),
+			Antigravity: hasFlag(cmdArgs, "antigravity"),
+			Uninstall:   hasFlag(cmdArgs, "uninstall"), Show: hasFlag(cmdArgs, "show"),
 		}), 0)
 	case "version":
 		c := db.RowCounts()
@@ -541,7 +543,7 @@ USAGE INGESTION
   usage models
 
 MAINTENANCE
-  init [--claude|--cursor|--copilot|--gemini|--windsurf|--cline]
+  init [--claude|--cursor|--copilot|--gemini|--windsurf|--cline|--antigravity]
   init --uninstall
   init --show
   version

@@ -1,9 +1,7 @@
 package doctor
 
 import (
-	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -49,29 +47,17 @@ func RunVerify(s *store.Store) string {
 		tools = append(tools, toolStatus{name: "Claude Code", installed: "not-detected", mode: "unknown"})
 	}
 
-	// Cursor - transparent (script in ~/.cursor/hooks/).
-	cursorHome := filepath.Join(home(), ".cursor")
-	cursorHook := filepath.Join(cursorHome, "hooks", "tok-rewrite.sh")
-	cursorCfg := filepath.Join(cursorHome, "hooks.json")
-	if util.FileExists(cursorHook) {
-		reg := isCursorRegistered(cursorCfg)
-		tools = append(tools, toolStatus{
-			name: "Cursor", installed: "yes", version: readHookVersion(cursorHook),
-			hookPath: "~/.cursor/hooks/tok-rewrite.sh", registered: boolPtr(reg),
-			hookProbe: probeCursorHook(cursorHook), mode: "transparent",
-		})
-	} else if util.FileExists(cursorHome) {
-		tools = append(tools, toolStatus{name: "Cursor", installed: "no", mode: "transparent",
-			note: "detected but hook missing - run: tok init --cursor"})
-	} else {
-		tools = append(tools, toolStatus{name: "Cursor", installed: "not-detected", mode: "unknown"})
-	}
+	// Cursor - instruction rule (~/.cursor/rules/tok.mdc). Cursor's hooks can only allow/deny/ask,
+	// never rewrite a command, so tok can't intercept it transparently.
+	tools = append(tools, instructionStatus("Cursor", filepath.Join(home(), ".cursor", "rules", "tok.mdc")))
 
 	// Instruction-mode tools.
 	tools = append(tools, instructionStatus("Copilot (VS Code)", vscodeAwarenessPath()))
 	tools = append(tools, instructionStatus("Gemini CLI", filepath.Join(home(), ".gemini", awarenessFilename)))
-	tools = append(tools, instructionStatus("Windsurf", filepath.Join(home(), ".codeium", "windsurf", awarenessFilename)))
 	tools = append(tools, instructionStatus("Cline / Roo Code", filepath.Join(home(), ".cline", awarenessFilename)))
+	// Rule-block tools (Antigravity, Windsurf): the tok rule lives inside a shared rules file.
+	tools = append(tools, ruleStatus("Antigravity", filepath.Join(home(), ".gemini", "AGENTS.md")))
+	tools = append(tools, ruleStatus("Windsurf", filepath.Join(home(), ".codeium", "windsurf", "memories", "global_rules.md")))
 
 	lines := []string{"Hook status:"}
 	for _, t := range tools {
@@ -130,67 +116,6 @@ func readHookVersion(p string) string {
 	return ""
 }
 
-func isCursorRegistered(cfgPath string) bool {
-	raw, ok := util.ReadFileIfExists(cfgPath)
-	if !ok {
-		return false
-	}
-	var cfg map[string]any
-	if json.Unmarshal([]byte(raw), &cfg) != nil {
-		return false
-	}
-	var list []any
-	if l, ok := cfg["preToolUse"].([]any); ok {
-		list = append(list, l...)
-	}
-	if hooks, ok := cfg["hooks"].(map[string]any); ok {
-		if l, ok := hooks["preToolUse"].([]any); ok {
-			list = append(list, l...)
-		}
-	}
-	for _, e := range list {
-		m, ok := e.(map[string]any)
-		if !ok {
-			continue
-		}
-		cmd, _ := m["command"].(string)
-		if m["id"] == "tok-rewrite" || strings.Contains(cmd, "tok-rewrite.sh") {
-			return true
-		}
-	}
-	return false
-}
-
-// probeCursorHook runs the Cursor hook script with a fake git-status payload and checks it
-// emits a tok rewrite. Returns "skipped" only when bash itself is unavailable.
-func probeCursorHook(hookPath string) string {
-	cmd := exec.Command("bash", hookPath)
-	cmd.Stdin = strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"git status"}}`)
-	out, err := cmd.Output()
-	if err != nil {
-		if _, lookErr := exec.LookPath("bash"); lookErr != nil {
-			return "skipped"
-		}
-		return "fail"
-	}
-	s := strings.TrimSpace(string(out))
-	if s == "" {
-		return "fail"
-	}
-	var parsed struct {
-		UpdatedInput struct {
-			Command string `json:"command"`
-		} `json:"updated_input"`
-	}
-	if json.Unmarshal([]byte(s), &parsed) != nil {
-		return "fail"
-	}
-	if strings.HasPrefix(parsed.UpdatedInput.Command, "tok ") {
-		return "pass"
-	}
-	return "fail"
-}
-
 func vscodeAwarenessPath() string {
 	candidates := []string{
 		filepath.Join(os.Getenv("APPDATA"), "Code", "User", awarenessFilename),
@@ -208,6 +133,15 @@ func vscodeAwarenessPath() string {
 func instructionStatus(name, mdPath string) toolStatus {
 	if util.FileExists(mdPath) {
 		return toolStatus{name: name, installed: "yes", version: readHookVersion(mdPath), hookPath: tildify(mdPath), mode: "instruction"}
+	}
+	return toolStatus{name: name, installed: "not-detected", mode: "instruction"}
+}
+
+// ruleStatus reports whether tok's managed rule block is present in a shared rules file
+// (Antigravity, Windsurf) - the file itself may exist holding only the user's own rules.
+func ruleStatus(name, rulesPath string) toolStatus {
+	if c, ok := util.ReadFileIfExists(rulesPath); ok && strings.Contains(c, "<!-- tok:start -->") {
+		return toolStatus{name: name, installed: "yes", hookPath: tildify(rulesPath), mode: "instruction"}
 	}
 	return toolStatus{name: name, installed: "not-detected", mode: "instruction"}
 }

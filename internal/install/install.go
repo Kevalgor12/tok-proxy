@@ -1,6 +1,7 @@
 // Package install wires tok into AI coding tools. Claude Code and Cursor get a transparent
-// PreToolUse hook that rewrites Bash commands; tools without a hook protocol (Copilot,
-// Gemini, Windsurf, Cline) get an instruction file they read as a system prompt.
+// PreToolUse hook that rewrites Bash commands; tools whose hooks cannot rewrite a command
+// (Copilot, Gemini, Windsurf, Antigravity, Cline) instead get a tok rule written into the
+// global-rules file they actually read, asking the agent to prefix commands with tok.
 package install
 
 import (
@@ -20,14 +21,15 @@ import (
 )
 
 type InitOptions struct {
-	Claude    bool
-	Cursor    bool
-	Copilot   bool
-	Gemini    bool
-	Windsurf  bool
-	Cline     bool
-	Uninstall bool
-	Show      bool
+	Claude      bool
+	Cursor      bool
+	Copilot     bool
+	Gemini      bool
+	Windsurf    bool
+	Cline       bool
+	Antigravity bool
+	Uninstall   bool
+	Show        bool
 }
 
 type installResult struct {
@@ -56,7 +58,7 @@ func RunInit(s *store.Store, opts InitOptions) string {
 		return uninstallAll()
 	}
 
-	all := !opts.Claude && !opts.Cursor && !opts.Copilot && !opts.Gemini && !opts.Windsurf && !opts.Cline
+	all := !opts.Claude && !opts.Cursor && !opts.Copilot && !opts.Gemini && !opts.Windsurf && !opts.Cline && !opts.Antigravity
 
 	var results []installResult
 	if all || opts.Claude {
@@ -73,6 +75,9 @@ func RunInit(s *store.Store, opts InitOptions) string {
 	}
 	if all || opts.Windsurf {
 		results = append(results, installWindsurf())
+	}
+	if all || opts.Antigravity {
+		results = append(results, installAntigravity())
 	}
 	if all || opts.Cline {
 		results = append(results, installCline())
@@ -124,7 +129,7 @@ func formatResults(results []installResult) string {
 	}
 	if anyInstruction {
 		lines = append(lines,
-			"Instruction mode: tool reads tok-awareness.md as a system prompt.",
+			"Instruction mode: a tok rule is written into the tool's global-rules file.",
 			"  Compression depends on the model voluntarily prefixing commands with tok.")
 	}
 	lines = append(lines, "  → Then run: tok verify  for a full status report.")
@@ -145,23 +150,6 @@ func installClaudeCode() []installResult {
 
 	status := mergeClaudeSettings(settingsPath, hook.ClaudeHookCommand())
 	return []installResult{{tool: "Claude Code", status: status, detail: "v" + constants.Version, mode: "transparent"}}
-}
-
-func writeHookIfChanged(p, content string) string {
-	existing, had := util.ReadFileIfExists(p)
-	if had {
-		if m := hookVersionRe.FindStringSubmatch(existing); m != nil && m[1] == constants.Version && existing == content {
-			return "skipped"
-		}
-	}
-	if !util.WriteFileSafe(p, content) {
-		return "failed"
-	}
-	util.ChmodIfPosix(p, 0o755)
-	if had {
-		return "updated"
-	}
-	return "installed"
 }
 
 func mergeClaudeSettings(settingsPath, hookCommand string) string {
@@ -247,36 +235,27 @@ func countOurs(arr []any, isOurs func(string) bool) int {
 	return n
 }
 
+// installCursor writes tok's instruction rule for Cursor. tok used to register a
+// tok-rewrite.sh PreToolUse hook, but current Cursor hooks (beforeShellExecution) can only
+// allow/deny/ask - they cannot rewrite a command - so that hook never actually took effect.
+// We remove it and drop an instruction rule Cursor reads from ~/.cursor/rules/tok.mdc instead.
 func installCursor() installResult {
 	cursorDir := filepath.Join(home(), ".cursor")
 	if !util.FileExists(cursorDir) {
 		return installResult{tool: "Cursor", status: "not-detected"}
 	}
-	hooksDir := filepath.Join(cursorDir, "hooks")
-	util.EnsureDir(hooksDir)
-	scriptPath := filepath.Join(hooksDir, "tok-rewrite.sh")
-	scriptStatus := writeHookIfChanged(scriptPath, GenerateCursorHook(constants.Version, hook.ResolveTokInvocation()))
+	removeLegacyCursorHook(cursorDir)
+	rulesDir := filepath.Join(cursorDir, "rules")
+	util.EnsureDir(rulesDir)
+	ok := util.WriteFileSafe(filepath.Join(rulesDir, "tok.mdc"), cursorRuleFile())
+	return installResult{tool: "Cursor", status: okStatus(ok), detail: "v" + constants.Version, mode: "instruction"}
+}
 
-	// Replace any previous fake config with a real registration referencing the script.
-	hooksPath := filepath.Join(cursorDir, "hooks.json")
-	cfg := readJSONMap(hooksPath)
-	if oldPre, ok := cfg["preToolUse"].([]any); ok {
-		filtered := rejectEntries(oldPre, func(m map[string]any) bool {
-			return str(m["id"]) == "tok-rewrite" || strings.Contains(str(m["command"]), "tok proxy")
-		})
-		if len(filtered) == 0 {
-			delete(cfg, "preToolUse")
-		} else {
-			cfg["preToolUse"] = filtered
-		}
-	}
-	portable := strings.ReplaceAll(tildify(scriptPath), `\`, "/")
-	hooksObj := childMap(cfg, "hooks")
-	hooksObj["preToolUse"] = []any{map[string]any{"id": "tok-rewrite", "version": constants.Version, "command": portable}}
-	cfg["hooks"] = hooksObj
-	writeJSONMap(hooksPath, cfg)
-
-	return installResult{tool: "Cursor", status: scriptStatus, detail: "v" + constants.Version, mode: "transparent"}
+// removeLegacyCursorHook strips the old, non-functional tok-rewrite.sh hook and its hooks.json
+// registration left by earlier tok versions.
+func removeLegacyCursorHook(cursorDir string) {
+	tryUnlink(filepath.Join(cursorDir, "hooks", "tok-rewrite.sh"))
+	removeFromCursor(filepath.Join(cursorDir, "hooks.json"))
 }
 
 func installCopilot() installResult {
@@ -338,8 +317,25 @@ func installWindsurf() installResult {
 	if !util.FileExists(dir) {
 		return installResult{tool: "Windsurf", status: "not-detected"}
 	}
-	ok := util.WriteFileSafe(filepath.Join(dir, awarenessFilename), GenerateAwarenessMd(constants.Version))
-	return installResult{tool: "Windsurf", status: okStatus(ok), detail: "v" + constants.Version, mode: "instruction"}
+	// Windsurf reads global rules from ~/.codeium/windsurf/memories/global_rules.md; the old
+	// tok-awareness.md sitting beside it was never read, so drop it.
+	tryUnlink(filepath.Join(dir, awarenessFilename))
+	util.EnsureDir(filepath.Join(dir, "memories"))
+	status := upsertRulesBlock(filepath.Join(dir, "memories", "global_rules.md"))
+	return installResult{tool: "Windsurf", status: status, detail: "v" + constants.Version, mode: "instruction"}
+}
+
+// installAntigravity writes tok's rule into Antigravity's global cross-tool rules file. Its
+// hooks can only allow/deny/ask (never rewrite a command), so instruction mode is the only
+// option; ~/.gemini/AGENTS.md is the file Antigravity reads for global rules.
+func installAntigravity() installResult {
+	geminiDir := filepath.Join(home(), ".gemini")
+	if !util.FileExists(filepath.Join(home(), ".antigravity")) && !util.FileExists(geminiDir) && !which("antigravity") {
+		return installResult{tool: "Antigravity", status: "not-detected"}
+	}
+	util.EnsureDir(geminiDir)
+	status := upsertRulesBlock(filepath.Join(geminiDir, "AGENTS.md"))
+	return installResult{tool: "Antigravity", status: status, detail: "v" + constants.Version, mode: "instruction"}
 }
 
 func installCline() installResult {
@@ -371,6 +367,14 @@ func uninstallAll() string {
 	add(cursorScript, tryUnlink(cursorScript))
 	cursorCfg := filepath.Join(home(), ".cursor", "hooks.json")
 	add(cursorCfg+" (tok entries)", removeFromCursor(cursorCfg))
+	cursorRule := filepath.Join(home(), ".cursor", "rules", "tok.mdc")
+	add(cursorRule, tryUnlink(cursorRule))
+
+	// Instruction-mode rule blocks in the IDEs' real global-rules files.
+	antigravityRules := filepath.Join(home(), ".gemini", "AGENTS.md")
+	add(antigravityRules+" (tok rule)", removeRulesBlock(antigravityRules))
+	windsurfRules := filepath.Join(home(), ".codeium", "windsurf", "memories", "global_rules.md")
+	add(windsurfRules+" (tok rule)", removeRulesBlock(windsurfRules))
 
 	awareness := [][2]string{
 		{"VS Code (Linux)", filepath.Join(home(), ".config", "Code", "User", awarenessFilename)},
@@ -503,11 +507,8 @@ func showHookStatus() string {
 	}
 
 	checks := [][2]string{
-		{"Cursor (script)", filepath.Join(home(), ".cursor", "hooks", "tok-rewrite.sh")},
-		{"Cursor (config)", filepath.Join(home(), ".cursor", "hooks.json")},
 		{"VS Code (awareness)", filepath.Join(os.Getenv("APPDATA"), "Code", "User", awarenessFilename)},
 		{"Gemini (awareness)", filepath.Join(home(), ".gemini", awarenessFilename)},
-		{"Windsurf (awareness)", filepath.Join(home(), ".codeium", "windsurf", awarenessFilename)},
 		{"Cline (awareness)", filepath.Join(home(), ".cline", awarenessFilename)},
 	}
 	for _, c := range checks {
@@ -517,6 +518,26 @@ func showHookStatus() string {
 				v = " (v" + ver + ")"
 			}
 			lines = append(lines, "  OK  "+util.Pad(c[0], 22, false)+" "+c[1]+v)
+		} else {
+			lines = append(lines, "  -   "+util.Pad(c[0], 22, false)+" not installed")
+		}
+	}
+
+	// Instruction-mode rule files. Cursor owns a dedicated tok.mdc; Antigravity/Windsurf share a
+	// rules file with the user, so those are marker-detected.
+	cursorRule := filepath.Join(home(), ".cursor", "rules", "tok.mdc")
+	if util.FileExists(cursorRule) {
+		lines = append(lines, "  OK  "+util.Pad("Cursor (rule)", 22, false)+" "+cursorRule)
+	} else {
+		lines = append(lines, "  -   "+util.Pad("Cursor (rule)", 22, false)+" not installed")
+	}
+	ruleChecks := [][2]string{
+		{"Antigravity (rule)", filepath.Join(home(), ".gemini", "AGENTS.md")},
+		{"Windsurf (rule)", filepath.Join(home(), ".codeium", "windsurf", "memories", "global_rules.md")},
+	}
+	for _, c := range ruleChecks {
+		if hasRulesBlock(c[1]) {
+			lines = append(lines, "  OK  "+util.Pad(c[0], 22, false)+" "+c[1])
 		} else {
 			lines = append(lines, "  -   "+util.Pad(c[0], 22, false)+" not installed")
 		}
@@ -540,14 +561,6 @@ func readHookVersionFromPath(p string) string {
 func home() string {
 	h, _ := os.UserHomeDir()
 	return h
-}
-
-func tildify(p string) string {
-	h := home()
-	if h != "" && strings.HasPrefix(p, h) {
-		return "~" + p[len(h):]
-	}
-	return p
 }
 
 func okStatus(ok bool) string {

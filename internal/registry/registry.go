@@ -91,31 +91,129 @@ var rules = []rule{
 	{regexp.MustCompile(`^wget(\s|$)`), "tok wget$1", ""},
 }
 
-// A command with any shell-composition token isn't safe to rewrite at the front, because
-// the matched word may be inside a subshell or after a logical operator. Pass it through.
-var complexShell = regexp.MustCompile("[|&;`$()<>]|" + `\|\||&&|\\` + "\n")
+// segUnsafe flags the shell tokens that make a single segment unsafe to rewrite at the
+// front - a pipe, redirect, subshell, command substitution, background, or newline. The word
+// tok would rewrite might feed a pipe or land inside a subshell, so those segments pass
+// through untouched. (Sequential operators && || ; are handled by splitting, not here.)
+var segUnsafe = regexp.MustCompile("[|&$()<>\n\x60]")
 
+// RewriteCommand decides how a shell command should be proxied through tok. Real agent
+// commands are usually compound ("cd api && npm ci && npm run build"), so the command is
+// split on the top-level sequential operators (&& || ;) and each recognized, side-effect-free
+// segment is rewritten independently; segments with pipes/redirects/subshells, or commands
+// tok doesn't know, are left exactly as they were. tok preserves every command's exit code,
+// so && / || / ; chaining behaves identically after the rewrite.
 func RewriteCommand(input string) Outcome {
 	cmd := strings.TrimSpace(input)
-	if cmd == "" || complexShell.MatchString(cmd) {
+	if cmd == "" {
 		return Outcome{Kind: "none"}
 	}
-	for _, r := range rules {
-		if !r.re.MatchString(cmd) {
-			continue
-		}
-		if r.replace == "__noop__" {
-			return Outcome{Kind: "none"}
-		}
-		rewritten := r.re.ReplaceAllString(cmd, r.replace)
-		switch r.action {
+	segs, seps, ok := splitOperators(cmd)
+	if !ok {
+		return Outcome{Kind: "none"} // unbalanced quotes - don't risk a bad rewrite
+	}
+
+	anyRewritten, anyAsk := false, false
+	for i, seg := range segs {
+		rewritten, kind := rewriteSegment(seg)
+		switch kind {
 		case "deny":
 			return Outcome{Kind: "deny"}
 		case "ask":
-			return Outcome{Kind: "ask", Rewritten: rewritten}
-		default:
-			return Outcome{Kind: "allow", Rewritten: rewritten}
+			segs[i], anyRewritten, anyAsk = rewritten, true, true
+		case "allow":
+			segs[i], anyRewritten = rewritten, true
 		}
 	}
-	return Outcome{Kind: "none"}
+	if !anyRewritten {
+		return Outcome{Kind: "none"}
+	}
+
+	var b strings.Builder
+	for i, seg := range segs {
+		b.WriteString(seg)
+		if i < len(seps) {
+			b.WriteString(seps[i])
+		}
+	}
+	kind := "allow"
+	if anyAsk {
+		kind = "ask"
+	}
+	return Outcome{Kind: kind, Rewritten: b.String()}
+}
+
+// rewriteSegment rewrites one segment's leading command if it is recognized and safe,
+// preserving the segment's surrounding whitespace. Returns the (possibly unchanged) segment
+// and the decision: "allow" / "ask" / "deny" when a rule matched, "none" otherwise.
+func rewriteSegment(seg string) (string, string) {
+	trimmed := strings.TrimSpace(seg)
+	if trimmed == "" || segUnsafe.MatchString(trimmed) {
+		return seg, "none"
+	}
+	for _, r := range rules {
+		if !r.re.MatchString(trimmed) {
+			continue
+		}
+		if r.replace == "__noop__" {
+			return seg, "none" // already a tok command
+		}
+		rewritten := r.re.ReplaceAllString(trimmed, r.replace)
+		lead := seg[:len(seg)-len(strings.TrimLeft(seg, " \t"))]
+		trail := seg[len(strings.TrimRight(seg, " \t")):]
+		switch r.action {
+		case "deny":
+			return seg, "deny"
+		case "ask":
+			return lead + rewritten + trail, "ask"
+		default:
+			return lead + rewritten + trail, "allow"
+		}
+	}
+	return seg, "none"
+}
+
+// splitOperators splits cmd on the top-level sequential operators && || ; while respecting
+// single/double quotes and backslash escapes, so a separator inside a quoted argument is not
+// treated as a split point. It returns the segments, the separators between them
+// (len(seps) == len(segs)-1), and ok=false if the quoting is unbalanced.
+func splitOperators(cmd string) (segs []string, seps []string, ok bool) {
+	var buf strings.Builder
+	inSingle, inDouble := false, false
+	for i := 0; i < len(cmd); {
+		c := cmd[i]
+		switch {
+		case c == '\\' && i+1 < len(cmd):
+			buf.WriteByte(c)
+			buf.WriteByte(cmd[i+1])
+			i += 2
+		case c == '\'' && !inDouble:
+			inSingle = !inSingle
+			buf.WriteByte(c)
+			i++
+		case c == '"' && !inSingle:
+			inDouble = !inDouble
+			buf.WriteByte(c)
+			i++
+		case !inSingle && !inDouble && c == '&' && i+1 < len(cmd) && cmd[i+1] == '&':
+			segs, seps = append(segs, buf.String()), append(seps, "&&")
+			buf.Reset()
+			i += 2
+		case !inSingle && !inDouble && c == '|' && i+1 < len(cmd) && cmd[i+1] == '|':
+			segs, seps = append(segs, buf.String()), append(seps, "||")
+			buf.Reset()
+			i += 2
+		case !inSingle && !inDouble && c == ';':
+			segs, seps = append(segs, buf.String()), append(seps, ";")
+			buf.Reset()
+			i++
+		default:
+			buf.WriteByte(c)
+			i++
+		}
+	}
+	if inSingle || inDouble {
+		return nil, nil, false
+	}
+	return append(segs, buf.String()), seps, true
 }

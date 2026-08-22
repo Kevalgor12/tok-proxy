@@ -15,9 +15,10 @@ func TestGenerators(t *testing.T) {
 	if !strings.Contains(md, "tok-hook-version: 9.9.9") || !strings.Contains(md, "tok git <args>") {
 		t.Errorf("awareness md = %q", md)
 	}
-	sh := GenerateCursorHook("9.9.9", "/abs/tok")
-	if !strings.Contains(sh, "tok-hook-version: 9.9.9") || !strings.Contains(sh, `TOK_BIN_STRING="/abs/tok"`) || !strings.Contains(sh, "updated_input") {
-		t.Errorf("cursor hook = %q", sh)
+	// Cursor rule (.mdc) needs alwaysApply frontmatter and the tok guidance.
+	rule := cursorRuleFile()
+	if !strings.Contains(rule, "alwaysApply: true") || !strings.Contains(rule, "prefix each recognized part") {
+		t.Errorf("cursor rule = %q", rule)
 	}
 }
 

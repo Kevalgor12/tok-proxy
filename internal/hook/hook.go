@@ -6,6 +6,7 @@ package hook
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,40 @@ import (
 	"github.com/Kevalgor12/tok-proxy/internal/registry"
 	"github.com/Kevalgor12/tok-proxy/internal/util"
 )
+
+// DebugLog appends a privacy-safe trace line to ~/.tok/hook.log every time the PreToolUse
+// hook is invoked - but only when a ~/.tok/hook-debug flag file exists. It records the tool
+// name, payload size, and whether a rewrite was produced, never the command text, so we can
+// tell whether the AI tool is actually calling the hook.
+func DebugLog(payload string, rewrote bool) {
+	dir := util.DataDir()
+	if !util.FileExists(filepath.Join(dir, "hook-debug")) {
+		return
+	}
+	var obj struct {
+		ToolName  string `json:"tool_name"`
+		ToolInput struct {
+			Command string `json:"command"`
+		} `json:"tool_input"`
+	}
+	_ = json.Unmarshal([]byte(payload), &obj)
+	tool := obj.ToolName
+	if tool == "" {
+		tool = "?"
+	}
+	// Log only the leading program token (git, npm, cd, ...), never the full command or args -
+	// consistent with tok's promise to store command types, not command contents.
+	prog := strings.TrimSpace(obj.ToolInput.Command)
+	if i := strings.IndexAny(prog, " \t\n"); i >= 0 {
+		prog = prog[:i]
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "hook.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s tool=%s rewrote=%v prog=%s\n", util.NowIso(), tool, rewrote, prog)
+}
 
 // BuildClaudeHookOutput returns the JSON to print for a PreToolUse payload, and whether
 // there is anything to print (false = pass the command through untouched).

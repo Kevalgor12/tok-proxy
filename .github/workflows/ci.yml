@@ -1,0 +1,38 @@
+name: CI
+
+# Build, vet, and test on every push and PR, across all three platforms tok ships to, so a
+# cross-OS regression (path handling, exec, permissions) is caught before release rather than
+# by a user. This covers the Go code and its logic; real per-IDE hook integration still needs
+# manual validation on each IDE.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Verify formatting
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l internal cmd)" || (echo 'run gofmt -w internal cmd' && gofmt -l internal cmd && exit 1)
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Build all platform binaries (smoke)
+        if: runner.os == 'Linux'
+        run: |
+          for pair in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS=${pair%/*} GOARCH=${pair#*/} go build -o /dev/null ./cmd/tok
+          done

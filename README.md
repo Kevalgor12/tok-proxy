@@ -168,13 +168,16 @@ After any install method, **restart your AI tool**, then run `tok doctor` to con
 | Tool | Hook type | Mechanism |
 |---|---|---|
 | **Claude Code** | Transparent | `PreToolUse` hook runs `tok hook claude` (no script, no node) |
-| **Cursor** | Transparent | `~/.cursor/hooks.json` `preToolUse` → `tok-rewrite.sh` |
+| **Cursor** | Instruction | tok rule in `~/.cursor/rules/tok.mdc` (its hooks can't rewrite commands) |
+| **Antigravity** | Instruction | tok rule in `~/.gemini/AGENTS.md` |
+| **Windsurf** | Instruction | tok rule in `~/.codeium/windsurf/memories/global_rules.md` |
 | **VS Code Copilot** | Instruction | `tok-awareness.md` in the VS Code user dir |
 | **Gemini CLI** | Instruction | `tok-awareness.md` in `~/.gemini` |
-| **Windsurf** | Instruction | `tok-awareness.md` in `~/.codeium/windsurf` |
 | **Cline / Roo Code** | Instruction | `tok-awareness.md` in `~/.cline` |
 
-`tok init` with no flags auto-detects every installed tool and installs the right hook for each.
+`tok init` with no flags auto-detects every installed tool and installs the right integration for each.
+
+**Transparent vs instruction — read this.** Only **Claude Code** exposes a hook that can actually *rewrite* a command, so it's the only tool tok intercepts silently with automatic, reliable savings. **Every other tool** — Cursor, Antigravity, Windsurf, Copilot, Gemini, Cline — has hooks that can only allow/deny/ask, never transform a command ([Cursor](https://cursor.com/docs/hooks), [Antigravity](https://antigravity.google/docs/hooks/), and [Windsurf](https://docs.windsurf.com/windsurf/cascade/hooks) all confirm this). For those, tok writes a rule asking the model to prefix `tok` itself — **best-effort: savings depend on the model following the rule, and will be lower and less consistent than Claude Code.** Only Windows + Claude Code is verified end-to-end today; other IDEs and macOS/Linux are built to spec but need real-world validation.
 
 ---
 
